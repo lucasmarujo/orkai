@@ -1,0 +1,4 @@
+# O repositorio vive dentro do OneDrive; a sincronizacao trava o target/ do Cargo.
+# Mover so o target/ para fora resolve sem mover o repositorio.
+[build]
+target-dir = "C:/orkai-build/target"
