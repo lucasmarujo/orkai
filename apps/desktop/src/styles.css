@@ -1,0 +1,1102 @@
+:root,
+:root[data-theme='dark'] {
+  --bg: #0e0f12;
+  --surface: #16181d;
+  --surface-alt: #1d2027;
+  --border: #2a2e37;
+  --accent: #4c8dff;
+  --text: #dfe3ea;
+  --text-dim: #8b93a3;
+
+  color-scheme: dark;
+  font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+}
+
+/* Tema claro: mesmas variaveis, valores claros. Todo o app reage por herdar delas. */
+:root[data-theme='light'] {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-alt: #eceef1;
+  --border: #d4d8de;
+  --accent: #2f6fe0;
+  --text: #1a1d22;
+  --text-dim: #66707c;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.app__canvas {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+/* ---------------------------------------------------------------- sidebar de workflows */
+
+.sidebar {
+  position: relative;
+  flex: 0 0 220px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+/* ---------------------------------------------------------------- resizer */
+
+/* Alça de arrastar das sidebars. Fina, mas com área de clique folgada. */
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resizer--right {
+  right: -4px;
+}
+
+.resizer--left {
+  left: -4px;
+}
+
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+
+.resizer:hover::after,
+body.is-resizing .resizer::after {
+  background: var(--accent);
+}
+
+/* Durante o arrasto: sem seleção de texto e cursor consistente na janela toda. */
+body.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.sidebar--collapsed {
+  flex-basis: 40px;
+  align-items: center;
+  padding-top: 8px;
+}
+
+.sidebar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar__titulo {
+  font-weight: 600;
+}
+
+.sidebar__toggle {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.sidebar__lista {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.sidebar__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar__item:hover {
+  background: var(--surface-alt);
+}
+
+.sidebar__item.is-active {
+  border-color: var(--accent);
+  background: var(--surface-alt);
+}
+
+.sidebar__nome {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__pasta {
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar__novo {
+  margin: 8px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sidebar__novo:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sidebar__novo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.app__status,
+.app__erro {
+  margin: auto;
+  color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------- painel de agentes */
+
+.agent-panel {
+  position: relative;
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.agent-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.agent-panel__head button {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agent-panel__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+
+.agent-panel__tabs button {
+  flex: 1 1 0;
+  padding: 8px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-panel__tabs button.is-active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.agent-panel__novo {
+  margin: 10px 12px 6px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.agent-panel__novo:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Gerenciador de roles */
+.roles {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.roles__lista {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.roles__item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.roles__item:hover {
+  background: var(--surface-alt);
+}
+
+.roles__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.roles__nome {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.roles__tag {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.roles__prompt {
+  font-size: 11px;
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.roles__acoes {
+  display: flex;
+  gap: 2px;
+}
+
+.roles__acoes button {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.roles__acoes button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.roles__form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.roles__form-titulo {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.roles__form input,
+.roles__form textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.roles__form-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.roles__form-acoes button {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.roles__salvar {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+.roles__salvar:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.agent-panel__lista {
+  flex: 1 1 auto;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.agent-panel__item {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 8px 12px;
+}
+
+.agent-panel__dot {
+  grid-row: span 2;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.agent-panel__dot.is-on {
+  background: #16c60c;
+  box-shadow: 0 0 6px #16c60c;
+}
+
+.agent-panel__dot.is-off {
+  background: var(--text-dim);
+}
+
+.agent-panel__nome {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-panel__meta {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-panel__vazio,
+.agent-panel__nota {
+  padding: 12px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.agent-panel__nota {
+  border-top: 1px solid var(--border);
+}
+
+.app__erro {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border: 1px solid #5a2530;
+  border-radius: 6px;
+  background: #2a1418;
+  color: #ff9aa6;
+}
+
+/* ---------------------------------------------------------------- toolbar */
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.toolbar__brand {
+  margin-right: 8px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.toolbar button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.toolbar button:hover {
+  border-color: var(--accent);
+}
+
+.toolbar__agente {
+  border-color: var(--accent) !important;
+  color: #8ab4ff;
+}
+
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolbar button:focus-visible,
+.node__close:focus-visible,
+.node__port:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.toolbar__separador {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.toolbar__dica {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- canvas */
+
+.canvas {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+
+.canvas--arrastando {
+  cursor: grabbing;
+}
+
+/* O cursor de "mão" é do fundo; dentro de um nó volta ao normal. */
+.canvas .node {
+  cursor: default;
+}
+
+.canvas-background {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.canvas--sobre-aresta {
+  cursor: pointer;
+}
+
+/* Arestas e guias ficam entre o grid e os nós, e não capturam ponteiro:
+   o hit-test delas é feito no Canvas, por amostragem da curva. */
+.edge-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+}
+
+.canvas__marquise {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: rgb(76 141 255 / 12%);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- minimapa */
+
+.minimap {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgb(14 15 18 / 88%);
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.minimap__node,
+.minimap__camera {
+  position: absolute;
+}
+
+.minimap__node {
+  background: var(--text-dim);
+  border-radius: 1px;
+}
+
+.minimap__node--terminal {
+  background: #61d6d6;
+}
+
+.minimap__node--markdown {
+  background: #8b93a3;
+}
+
+.minimap__node--agent {
+  background: #8ab4ff;
+}
+
+.minimap__node--frame {
+  background: transparent;
+  border: 1px solid #4a4f5c;
+}
+
+.minimap__camera {
+  border: 1px solid var(--accent);
+  background: rgb(76 141 255 / 10%);
+}
+
+/* Origem no canto superior esquerdo: casa com a matriz usada no shader. */
+.canvas__nodes {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.canvas__hud {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(22, 24, 29, 0.85);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- nós */
+
+.node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  overflow: hidden;
+  will-change: transform;
+}
+
+.node--selected {
+  border-color: var(--accent);
+}
+
+.node__header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 0 0 auto;
+  padding: 6px 8px 6px 12px;
+  background: var(--surface-alt);
+  cursor: grab;
+  user-select: none;
+}
+
+.node__title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node__close {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+.node__close:hover {
+  background: #3a1b21;
+  color: #ff9aa6;
+}
+
+.node__body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Alças de redimensionar: 4 bordas + 4 cantos. Ficam meio para fora do nó, para
+   pegar o ponteiro sem roubar clique do conteúdo (terminal, editor). */
+.node__resize {
+  position: absolute;
+  z-index: 2;
+}
+
+.node__resize--n,
+.node__resize--s {
+  left: 8px;
+  right: 8px;
+  height: 8px;
+}
+
+.node__resize--n {
+  top: -4px;
+}
+
+.node__resize--s {
+  bottom: -4px;
+}
+
+.node__resize--e,
+.node__resize--w {
+  top: 8px;
+  bottom: 8px;
+  width: 8px;
+}
+
+.node__resize--e {
+  right: -4px;
+}
+
+.node__resize--w {
+  left: -4px;
+}
+
+.node__resize--ne,
+.node__resize--nw,
+.node__resize--se,
+.node__resize--sw {
+  width: 14px;
+  height: 14px;
+}
+
+.node__resize--nw {
+  top: -4px;
+  left: -4px;
+}
+
+.node__resize--ne {
+  top: -4px;
+  right: -4px;
+}
+
+.node__resize--sw {
+  bottom: -4px;
+  left: -4px;
+}
+
+.node__resize--se {
+  bottom: -4px;
+  right: -4px;
+}
+
+/* Frame: moldura de agrupamento. Fica atrás e deixa o clique passar para o conteúdo. */
+.node--frame {
+  background: rgb(29 32 39 / 35%);
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.node--frame .node__body {
+  pointer-events: none;
+}
+
+.frame-host {
+  width: 100%;
+  height: 100%;
+}
+
+/* Handle de conexão: sai da borda direita, no meio da altura. */
+.node__port {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  padding: 0;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  cursor: crosshair;
+  transition: opacity 120ms ease;
+}
+
+.node:hover .node__port,
+.node--selected .node__port {
+  opacity: 1;
+}
+
+/* Marca visual só no canto inferior-direito: as outras alças são invisíveis, mas
+   descobertas pelo cursor ao aproximar da borda. */
+.node__resize--se::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+}
+
+/* ---------------------------------------------------------------- conteúdo */
+
+.terminal-host {
+  width: 100%;
+  height: 100%;
+  padding: 6px 0 0 8px;
+  background: #0c0c0c;
+}
+
+/* Agente: terminal com uma faixa de role no topo. */
+.agent-host {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.agent-host__role {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  background: #1a2740;
+  color: #8ab4ff;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.agent-host__role {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agent-host__badge {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #16c60c;
+  color: #04210a;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  text-transform: none;
+}
+
+.agent-host .terminal-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* Painel: caixa de entrada e log MCP (debugger visual). */
+.agent-panel__inbox {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #16c60c;
+  color: #04210a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.agent-panel__debug {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.agent-panel__debug-titulo {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.agent-panel__log {
+  margin: 0;
+  padding: 0 0 8px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.agent-panel__log li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 12px;
+  font-size: 12px;
+}
+
+.agent-panel__log code {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  color: var(--accent);
+}
+
+.agent-panel__log li.is-err code {
+  color: #ff9aa6;
+}
+
+.agent-panel__log span {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Diálogo modal (novo agente). */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 55%);
+}
+
+.dialog {
+  width: 380px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 55%);
+}
+
+.dialog__title {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+
+.dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dialog__field select,
+.dialog__field input {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.dialog__actions button {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.dialog__primary {
+  border-color: var(--accent) !important;
+  background: var(--accent) !important;
+  color: #fff !important;
+}
+
+/* Nota com cor: a moldura recebe o fundo; a paleta some até o hover/seleção. */
+.markdown-wrap {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+
+.markdown-swatches {
+  display: flex;
+  gap: 5px;
+  padding: 5px 8px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.node:hover .markdown-swatches,
+.node--selected .markdown-swatches {
+  opacity: 1;
+}
+
+.markdown-swatch {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.markdown-swatch.is-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.markdown-host {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  padding: 4px 16px 12px;
+  overflow: auto;
+  background: transparent;
+}
+
+.markdown-host--editor {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: none;
+}
+
+.markdown-host--editor:focus {
+  outline: 0;
+}
+
+.markdown-host--erro {
+  color: #ff9aa6;
+}
+
+.markdown-preview :is(h1, h2, h3) {
+  margin: 0.6em 0 0.3em;
+  line-height: 1.3;
+}
+
+.markdown-preview code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-alt);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+.markdown-preview pre {
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--surface-alt);
+  overflow-x: auto;
+}
+
+.markdown-preview :is(img, table) {
+  max-width: 100%;
+}
+
+.markdown-preview:empty::after {
+  content: 'Clique duplo para editar';
+  color: var(--text-dim);
+}

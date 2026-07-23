@@ -1,0 +1,17 @@
+{
+  "name": "orkai",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @orkai/desktop",
+    "build": "npm run build --workspace @orkai/desktop",
+    "tauri": "npm run tauri --workspace @orkai/desktop",
+    "test": "npm run test --workspace @orkai/desktop",
+    "lint": "npm run lint --workspace @orkai/desktop",
+    "typecheck": "npm run typecheck --workspace @orkai/desktop"
+  }
+}
