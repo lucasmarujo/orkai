@@ -41,7 +41,12 @@ you can tweak them exactly like a normal `style` attribute.
 
 ## Download button
 
-The primary button points at the latest GitHub release `.msi`. On load it also
-queries the GitHub API and swaps in the real asset URL if the file name changes;
-if that call fails it keeps the static link. Publish a release under
-`orkai/orkai` and the button resolves automatically.
+The primary button is a plain link to GitHub's permanent latest-release route:
+
+```
+https://github.com/lucasmarujo/orkai/releases/latest/download/Orkai_x64_en-US.msi
+```
+
+The release workflow strips the version from the installer file name, so this URL
+never has to change. It only resolves once a release is **published** — drafts are
+invisible to `/latest/`. See [RELEASING.md](../RELEASING.md).
