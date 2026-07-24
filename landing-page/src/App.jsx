@@ -1,28 +1,12 @@
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-const ACCENT = 'oklch(0.82 0.13 195)'
-
-// Turn a plain CSS string into a React style object so the markup below
-// can be edited with familiar `prop: value;` syntax.
-function s(css) {
-  const out = {}
-  css.split(';').forEach((decl) => {
-    const i = decl.indexOf(':')
-    if (i < 0) return
-    let key = decl.slice(0, i).trim()
-    const value = decl.slice(i + 1).trim()
-    if (!key) return
-    key = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase())
-    out[key] = value
-  })
-  return out
-}
+import { useRef } from 'react'
+import GraphScene from './GraphScene.jsx'
+import { spotlight, useActiveStep, usePrefersReducedMotion, useReveal, useScrollFx } from './hooks.js'
 
 /* ------------------------------------------------------------------ */
 /*  Icons                                                              */
 /* ------------------------------------------------------------------ */
+
+const ACCENT = 'oklch(0.82 0.13 195)'
 
 function Icon({ name, size = 18 }) {
   const p = {
@@ -157,31 +141,19 @@ const AGENTS = [
     name: 'Claude Code',
     icon: 'terminal',
     body: "Run Anthropic's coding CLI as a node and wire it to the files and workers it should reach.",
-    iconColor: '#e08a6e',
-    border: '#d9775766',
-    iconBorder: '#d9775755',
-    iconBg: '#d9775718',
-    bg: 'linear-gradient(180deg,#1a1512,#0f1116)',
+    tone: { '--agent-icon': '#e08a6e', '--agent-line': '#d9775766', '--agent-icon-line': '#d9775755', '--agent-icon-bg': '#d9775718', '--agent-bg': 'linear-gradient(180deg,#1a1512,rgba(15,17,22,0.72))' },
   },
   {
     name: 'Codex',
     icon: 'codex',
     body: "Plug OpenAI's Codex CLI into your graph and orchestrate it alongside every other agent.",
-    iconColor: '#2bbf9b',
-    border: '#10a37f66',
-    iconBorder: '#10a37f55',
-    iconBg: '#10a37f18',
-    bg: 'linear-gradient(180deg,#0c1a16,#0f1116)',
+    tone: { '--agent-icon': '#2bbf9b', '--agent-line': '#10a37f66', '--agent-icon-line': '#10a37f55', '--agent-icon-bg': '#10a37f18', '--agent-bg': 'linear-gradient(180deg,#0c1a16,rgba(15,17,22,0.72))' },
   },
   {
     name: 'OpenCode',
     icon: 'code',
     body: 'The open-source CLI agent runs as a first-class node, ready to connect and command.',
-    iconColor: '#f0ab3d',
-    border: '#f59e0b66',
-    iconBorder: '#f59e0b55',
-    iconBg: '#f59e0b18',
-    bg: 'linear-gradient(180deg,#1a1508,#0f1116)',
+    tone: { '--agent-icon': '#f0ab3d', '--agent-line': '#f59e0b66', '--agent-icon-line': '#f59e0b55', '--agent-icon-bg': '#f59e0b18', '--agent-bg': 'linear-gradient(180deg,#1a1508,rgba(15,17,22,0.72))' },
   },
 ]
 
@@ -193,16 +165,16 @@ const STEPS = [
 ]
 
 const STATS = [
-  { v: 'MIT', label: 'Permissive license', color: '#e6e8eb' },
-  { v: 'Rust', label: '+ Tauri core', color: '#e6e8eb' },
-  { v: '~40MB', label: 'Installer size', color: '#e6e8eb' },
-  { v: '100%', label: 'Local-first', color: ACCENT },
+  { v: 'MIT', label: 'Permissive license' },
+  { v: 'Rust', label: '+ Tauri core' },
+  { v: '~40MB', label: 'Installer size' },
+  { v: '100%', label: 'Local-first', accent: true },
 ]
 
 const REQUIREMENTS = [
   { text: 'Windows 10 or 11 (64-bit)' },
   { text: 'Microsoft Edge WebView2 runtime' },
-  { text: '~40\u00A0MB installer, light on memory' },
+  { text: '~40 MB installer, light on memory' },
   { text: 'Light & dark themes included', muted: true },
 ]
 
@@ -210,27 +182,26 @@ const REQUIREMENTS = [
 /*  Reusable pieces                                                    */
 /* ------------------------------------------------------------------ */
 
-function DownloadButton({ href, big }) {
-  const pad = big ? '15px 28px' : '14px 24px'
+function DownloadButton({ href, size }) {
   return (
-    <a
-      className="btn-primary"
-      href={href}
-      style={s(
-        `display:inline-flex; align-items:center; gap:10px; background:${ACCENT}; color:#06231f; font-weight:600; font-size:15px; padding:${pad}; border-radius:11px; transition:transform 0.15s, box-shadow 0.15s; box-shadow:0 6px 24px oklch(0.82 0.13 195 / 0.25);`
-      )}
-    >
+    <a className={`btn btn--primary${size ? ` btn--${size}` : ''}`} href={href}>
       <Icon name="download" />
-      Download for Windows
+      {size === 'sm' ? 'Download' : 'Download for Windows'}
     </a>
   )
 }
 
 function InstallerNote() {
+  return <p className="installer-note">Windows 10/11 · .msi installer</p>
+}
+
+function SectionHead({ eyebrow, title, body }) {
   return (
-    <p style={s("font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#6b7280; margin:14px 0 0;")}>
-      Windows 10/11 · .msi installer
-    </p>
+    <div className="section__head" data-reveal>
+      <p className="eyebrow">{eyebrow}</p>
+      <h2>{title}</h2>
+      {body ? <p className="muted">{body}</p> : null}
+    </div>
   )
 }
 
@@ -238,122 +209,125 @@ function InstallerNote() {
 /*  Sections                                                           */
 /* ------------------------------------------------------------------ */
 
-function Header() {
+function Header({ scrolled }) {
   return (
-    <header style={s('max-width:1180px; margin:0 auto; padding:22px 24px; display:flex; align-items:center; justify-content:space-between;')}>
-      <div style={s('display:flex; align-items:center; gap:11px;')}>
-        <div style={s('width:32px; height:32px; display:flex; align-items:center; justify-content:center;')}>
+    <header className={`header${scrolled ? ' is-scrolled' : ''}`}>
+      <div className="shell header__bar">
+        <a className="brand" href="#top">
           <Icon name="logo" />
+          Orkai
+        </a>
+        <nav className="nav">
+          <a href="#features">Features</a>
+          <a href="#agents">Agents</a>
+          <a href="#workflow">How it works</a>
+          <a href="#requirements">Requirements</a>
+        </nav>
+        <div className="header__actions">
+          <a className="btn btn--ghost btn--sm" href={GITHUB_URL}>
+            <Icon name="github" />
+            GitHub
+          </a>
+          <DownloadButton href={DOWNLOAD_MSI} size="sm" />
         </div>
-        <span style={s('font-weight:600; font-size:18px; letter-spacing:-0.01em;')}>Orkai</span>
       </div>
-      <nav data-nav style={s('display:flex; align-items:center; gap:26px; font-size:14px;')}>
-        <a href="#features" style={s('color:#9aa0a8;')}>Features</a>
-        <a href="#agents" style={s('color:#9aa0a8;')}>Agents</a>
-        <a href="#requirements" style={s('color:#9aa0a8;')}>Requirements</a>
-        <a href={GITHUB_URL} style={s('color:#9aa0a8;')}>GitHub</a>
-      </nav>
+      <div className="progress" aria-hidden="true" />
     </header>
   )
 }
 
-function NodeCanvas() {
+function CanvasPreview() {
   return (
-    <div style={s('border:1px solid #1c1f26; border-radius:16px; background:linear-gradient(180deg,#0f1116,#0b0d10); padding:18px; position:relative; overflow:hidden;')}>
-      <div style={s('position:absolute; inset:0; background-image:radial-gradient(#1a1d24 1px, transparent 1px); background-size:22px 22px; opacity:0.5;')}></div>
-      <div style={s("position:relative; display:flex; align-items:center; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:11px; color:#6b7280; margin-bottom:10px;")}>
+    <div className="panel preview" data-reveal style={{ '--i': 2 }}>
+      <div className="preview__bar">
         <span>workspace.orkai</span>
-        <span style={s(`color:${ACCENT};`)}>● maestro</span>
+        <b>● maestro</b>
       </div>
-      <svg viewBox="0 0 440 340" width="100%" style={{ position: 'relative', display: 'block' }} role="img" aria-label="A visual canvas of connected agent nodes">
+      <svg className="preview__svg" viewBox="0 0 440 340" role="img" aria-label="A visual canvas of connected agent nodes">
         <defs>
           <linearGradient id="edge" x1="0" y1="0" x2="1" y2="0">
             <stop offset="0" stopColor={ACCENT} stopOpacity="0.25" />
             <stop offset="1" stopColor={ACCENT} stopOpacity="0.9" />
           </linearGradient>
         </defs>
-        <g fill="none" stroke="url(#edge)" strokeWidth="1.8" strokeDasharray="5 7" style={{ animation: 'dashflow 1.6s linear infinite' }}>
+        <g className="edges" fill="none" stroke="url(#edge)" strokeWidth="1.8" strokeDasharray="5 7">
           <path d="M120 90 C 190 90, 190 170, 250 170" />
           <path d="M120 250 C 190 250, 190 178, 250 178" />
           <path d="M330 174 C 380 174, 380 90, 400 90" />
         </g>
-        {/* Maestro */}
         <g>
           <rect x="250" y="150" width="80" height="44" rx="10" fill="#12161c" stroke="oklch(0.82 0.13 195 / 0.6)" />
           <circle cx="264" cy="172" r="4" fill={ACCENT} />
-          <text x="278" y="176" fill="#cdd2d8" fontFamily="'IBM Plex Mono',monospace" fontSize="12">Maestro</text>
+          <text x="274" y="176" fill="#cdd2d8" fontFamily="'IBM Plex Mono',monospace" fontSize="10.5">Maestro</text>
         </g>
-        {/* worker terminal */}
         <g>
           <rect x="46" y="66" width="80" height="46" rx="10" fill="#12161c" stroke="#2a2e36" />
           <circle cx="60" cy="89" r="4" fill="#7dd3c0" />
-          <text x="72" y="93" fill="#9aa0a8" fontFamily="'IBM Plex Mono',monospace" fontSize="11">terminal</text>
+          <text x="70" y="93" fill="#9aa0a8" fontFamily="'IBM Plex Mono',monospace" fontSize="9.5">terminal</text>
         </g>
-        {/* worker cli */}
         <g>
           <rect x="46" y="228" width="80" height="46" rx="10" fill="#12161c" stroke="#2a2e36" />
           <circle cx="60" cy="251" r="4" fill="#7dd3c0" />
-          <text x="72" y="255" fill="#9aa0a8" fontFamily="'IBM Plex Mono',monospace" fontSize="11">cli agent</text>
+          <text x="70" y="255" fill="#9aa0a8" fontFamily="'IBM Plex Mono',monospace" fontSize="9.5">cli agent</text>
         </g>
-        {/* note (unconnected -> no access) */}
+        {/* unconnected -> no access */}
         <g opacity="0.5">
           <rect x="378" y="66" width="48" height="46" rx="10" fill="#101216" stroke="#22252c" strokeDasharray="3 3" />
           <text x="402" y="93" fill="#6b7280" fontFamily="'IBM Plex Mono',monospace" fontSize="10" textAnchor="middle">note</text>
         </g>
       </svg>
-      <div style={s("position:relative; margin-top:12px; padding:10px 12px; border:1px solid #1c1f26; border-radius:10px; background:#0c0e12; font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#7dd3c0; line-height:1.5;")}>
+      <div className="preview__caption">
         edge = permission
-        <span style={s('color:#6b7280;')}> → agent sees only what connects to it</span>
+        <span> → agent sees only what connects to it</span>
       </div>
     </div>
   )
 }
 
-function Hero({ downloadUrl }) {
+function Hero({ heroRef }) {
   return (
-    <section data-grid="hero" style={s('max-width:1180px; margin:0 auto; padding:40px 24px 70px; display:grid; grid-template-columns:1.05fr 1fr; gap:56px; align-items:center;')}>
-      <div>
-        <div style={s("display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border:1px solid #23262d; border-radius:100px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:#9aa0a8; margin-bottom:26px;")}>
-          <span style={s(`width:6px; height:6px; border-radius:50%; background:${ACCENT}; animation:pulse 2s ease-in-out infinite;`)}></span>
+    <section className="shell hero" id="top">
+      <div className="hero__copy" ref={heroRef}>
+        <p className="hero__badge" data-reveal>
+          <span />
           Open-source · Windows-first
-        </div>
-        <h1 style={s('font-size:56px; line-height:1.04; letter-spacing:-0.03em; font-weight:700; margin:0 0 20px;')}>
-          Orchestrate AI agents on an infinite visual canvas.
-        </h1>
-        <p style={s('font-size:19px; line-height:1.55; color:#9aa0a8; margin:0 0 34px; max-width:520px;')}>
-          Terminals, notes, and CLI agents become connectable nodes. The connection{' '}
-          <em style={s('color:#e6e8eb; font-style:normal;')}>is</em> the permission. An agent only sees and talks to what an edge links to it.
         </p>
-        <div style={s('display:flex; flex-wrap:wrap; gap:14px; align-items:center;')}>
-          <DownloadButton href={downloadUrl} />
-          <a className="btn-secondary" href={GITHUB_URL} style={s('display:inline-flex; align-items:center; gap:10px; border:1px solid #2a2e36; color:#e6e8eb; font-weight:500; font-size:15px; padding:14px 22px; border-radius:11px; transition:border-color 0.15s, background 0.15s;')}>
+        <h1 data-reveal style={{ '--i': 1 }}>
+          Orchestrate AI agents on an <em>infinite</em> visual canvas.
+        </h1>
+        <p className="hero__lead" data-reveal style={{ '--i': 2 }}>
+          Terminals, notes, and CLI agents become connectable nodes. The connection <em>is</em> the
+          permission. An agent only sees and talks to what an edge links to it.
+        </p>
+        <div className="hero__cta" data-reveal style={{ '--i': 3 }}>
+          <DownloadButton href={DOWNLOAD_MSI} />
+          <a className="btn btn--ghost" href={GITHUB_URL}>
             <Icon name="github" />
             View on GitHub
           </a>
         </div>
-        <InstallerNote />
+        <div data-reveal style={{ '--i': 4 }}>
+          <InstallerNote />
+        </div>
       </div>
-      <NodeCanvas />
+      <CanvasPreview />
     </section>
   )
 }
 
 function Features() {
   return (
-    <section id="features" style={s('max-width:1180px; margin:0 auto; padding:30px 24px 20px;')}>
-      <p style={s(`font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:${ACCENT}; margin:0 0 10px; letter-spacing:0.02em;`)}>// how it works</p>
-      <h2 style={s('font-size:34px; letter-spacing:-0.02em; font-weight:700; margin:0 0 40px; max-width:640px;')}>
-        A canvas built for orchestrating agents, not another chat window.
-      </h2>
-      <div data-grid="features" style={s('display:grid; grid-template-columns:repeat(3,1fr); gap:16px;')}>
-        {FEATURES.map((f) => (
-          <div key={f.title} className="card-hover" style={s('border:1px solid #1c1f26; border-radius:14px; background:#0f1116; padding:22px; transition:border-color 0.18s, background 0.18s;')}>
-            <div style={s(`width:34px; height:34px; border-radius:9px; border:1px solid #262a32; background:#14181e; display:flex; align-items:center; justify-content:center; margin-bottom:16px; color:${ACCENT};`)}>
+    <section className="shell section" id="features">
+      <SectionHead eyebrow="// how it works" title="A canvas built for orchestrating agents, not another chat window." />
+      <div className="grid-3">
+        {FEATURES.map((f, i) => (
+          <article key={f.title} className="card" data-reveal style={{ '--i': i % 3 }} onPointerMove={spotlight}>
+            <div className="card__icon">
               <Icon name={f.icon} />
             </div>
-            <h3 style={s('font-size:17px; font-weight:600; margin:0 0 8px; letter-spacing:-0.01em;')}>{f.title}</h3>
-            <p style={s('font-size:14.5px; line-height:1.55; color:#9aa0a8; margin:0;')}>{f.body}</p>
-          </div>
+            <h3 className="card__title">{f.title}</h3>
+            <p className="card__body">{f.body}</p>
+          </article>
         ))}
       </div>
     </section>
@@ -362,60 +336,58 @@ function Features() {
 
 function Agents() {
   return (
-    <section id="agents" style={s('max-width:1180px; margin:0 auto; padding:70px 24px 20px;')}>
-      <p style={s(`font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:${ACCENT}; margin:0 0 10px; letter-spacing:0.02em;`)}>// works with your agents</p>
-      <h2 style={s('font-size:34px; letter-spacing:-0.02em; font-weight:700; margin:0 0 12px; max-width:640px;')}>
-        Bring the coding agents you already use.
-      </h2>
-      <p style={s('font-size:16px; line-height:1.6; color:#9aa0a8; margin:0 0 40px; max-width:560px;')}>
-        Drop any supported CLI agent onto the canvas as a node. More integrations are landing continuously.
-      </p>
-      <div data-grid="features" style={s('display:grid; grid-template-columns:repeat(3,1fr); gap:16px;')}>
-        {AGENTS.map((a) => (
-          <div key={a.name} style={s(`border:1px solid ${a.border}; border-radius:14px; background:${a.bg}; padding:22px; display:flex; flex-direction:column; gap:14px;`)}>
-            <div style={s('display:flex; align-items:center; justify-content:space-between;')}>
-              <div style={s(`width:38px; height:38px; border-radius:10px; border:1px solid ${a.iconBorder}; background:${a.iconBg}; display:flex; align-items:center; justify-content:center; color:${a.iconColor};`)}>
+    <section className="shell section" id="agents">
+      <SectionHead
+        eyebrow="// works with your agents"
+        title="Bring the coding agents you already use."
+        body="Drop any supported CLI agent onto the canvas as a node. More integrations are landing continuously."
+      />
+      <div className="grid-3">
+        {AGENTS.map((a, i) => (
+          <article key={a.name} className="card agent" data-reveal style={{ ...a.tone, '--i': i }} onPointerMove={spotlight}>
+            <div className="agent__top">
+              <div className="agent__icon">
                 <Icon name={a.icon} size={19} />
               </div>
-              <span style={s("font-family:'IBM Plex Mono',monospace; font-size:11px; color:oklch(0.85 0.14 155); border:1px solid oklch(0.85 0.14 155 / 0.35); border-radius:100px; padding:4px 10px; display:inline-flex; align-items:center; gap:6px;")}>
-                <span style={s('width:6px; height:6px; border-radius:50%; background:oklch(0.85 0.14 155);')}></span>
-                Available
-              </span>
+              <span className="pill pill--ok">Available</span>
             </div>
             <div>
-              <h3 style={s('font-size:17px; font-weight:600; margin:0 0 5px; letter-spacing:-0.01em;')}>{a.name}</h3>
-              <p style={s('font-size:14px; line-height:1.55; color:#9aa0a8; margin:0;')}>{a.body}</p>
+              <h3 className="card__title">{a.name}</h3>
+              <p className="card__body">{a.body}</p>
             </div>
-          </div>
+          </article>
         ))}
       </div>
-      <div style={s('margin-top:20px; border:1px dashed #262a32; border-radius:14px; background:#0c0e12; padding:20px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;')}>
-        <span style={s("font-family:'IBM Plex Mono',monospace; font-size:11px; color:#9aa0a8; border:1px solid #2a2e36; border-radius:100px; padding:4px 10px; display:inline-flex; align-items:center; gap:6px;")}>
-          <span style={s('width:6px; height:6px; border-radius:50%; background:#6b7280;')}></span>
-          In development
-        </span>
-        <span style={s('font-size:14.5px; color:#9aa0a8;')}>
-          Aider, Gemini CLI, Cline and more integrations are on the way. Bring your own agent by wrapping any command.
-        </span>
+      <div className="roadmap" data-reveal>
+        <span className="pill">In development</span>
+        <p>Aider, Gemini CLI, Cline and more integrations are on the way. Bring your own agent by wrapping any command.</p>
       </div>
     </section>
   )
 }
 
 function Workflow() {
+  const active = useActiveStep()
   return (
-    <section style={s('max-width:1180px; margin:0 auto; padding:70px 24px 30px;')}>
-      <p style={s(`font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:${ACCENT}; margin:0 0 10px; letter-spacing:0.02em;`)}>// from zero to orchestration</p>
-      <h2 style={s('font-size:34px; letter-spacing:-0.02em; font-weight:700; margin:0 0 40px; max-width:640px;')}>
-        Four steps to a working agent graph.
-      </h2>
-      <div data-grid="features" style={s('display:grid; grid-template-columns:repeat(4,1fr); gap:16px;')}>
-        {STEPS.map((step) => (
-          <div key={step.n} style={s('border:1px solid #1c1f26; border-radius:14px; background:#0f1116; padding:22px; position:relative;')}>
-            <span style={s(`font-family:'IBM Plex Mono',monospace; font-size:13px; color:${ACCENT}; border:1px solid #23262d; border-radius:8px; padding:3px 9px;`)}>{step.n}</span>
-            <h3 style={s('font-size:16.5px; font-weight:600; margin:16px 0 8px; letter-spacing:-0.01em;')}>{step.title}</h3>
-            <p style={s('font-size:14px; line-height:1.55; color:#9aa0a8; margin:0;')}>{step.body}</p>
-          </div>
+    <section className="shell section steps" id="workflow">
+      <aside className="steps__rail">
+        <p className="eyebrow">// from zero to orchestration</p>
+        <h2>Four steps to a working agent graph.</h2>
+        <ol className="steps__dots">
+          {STEPS.map((step, i) => (
+            <li key={step.n} className={`steps__dot${i === active ? ' is-active' : ''}`}>
+              {step.n} · {step.title}
+            </li>
+          ))}
+        </ol>
+      </aside>
+      <div>
+        {STEPS.map((step, i) => (
+          <article key={step.n} className={`step${i === active ? ' is-active' : ''}`} data-step={i}>
+            <span className="step__n">{step.n}</span>
+            <h3>{step.title}</h3>
+            <p>{step.body}</p>
+          </article>
         ))}
       </div>
     </section>
@@ -424,28 +396,32 @@ function Workflow() {
 
 function OpenSource() {
   return (
-    <section style={s('max-width:1180px; margin:0 auto; padding:40px 24px 10px;')}>
-      <div data-grid="req" style={s('border:1px solid #1c1f26; border-radius:16px; background:linear-gradient(180deg,#0f1116,#0b0d10); padding:34px; display:grid; grid-template-columns:1fr 1fr; gap:40px; align-items:center;')}>
+    <section className="shell section">
+      <div className="panel split" data-reveal>
         <div>
-          <p style={s(`font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:${ACCENT}; margin:0 0 10px;`)}>// open by design</p>
-          <h2 style={s('font-size:28px; letter-spacing:-0.02em; font-weight:700; margin:0 0 12px;')}>Yours to inspect, fork and extend.</h2>
-          <p style={s('font-size:15px; line-height:1.6; color:#9aa0a8; margin:0 0 22px;')}>
-            Orkai is MIT-licensed and fully open-source. Read the code that runs your agents, self-host nothing, and shape the roadmap in the open.
+          <p className="eyebrow">// open by design</p>
+          <h2>Yours to inspect, fork and extend.</h2>
+          <p>
+            Orkai is MIT-licensed and fully open-source. Read the code that runs your agents, self-host
+            nothing, and shape the roadmap in the open.
           </p>
-          <div style={s('display:flex; gap:12px; flex-wrap:wrap;')}>
-            <a className="btn-secondary" href={GITHUB_URL} style={s('display:inline-flex; align-items:center; gap:9px; border:1px solid #2a2e36; color:#e6e8eb; font-weight:500; font-size:14px; padding:11px 18px; border-radius:10px; transition:border-color 0.15s, background 0.15s;')}>
+          <div className="split__actions">
+            <a className="btn btn--ghost btn--sm" href={GITHUB_URL}>
+              <Icon name="github" />
               Star on GitHub
             </a>
-            <a className="link-accent" href={GITHUB_URL} style={s('display:inline-flex; align-items:center; gap:9px; color:#9aa0a8; font-weight:500; font-size:14px; padding:11px 4px;')}>
+            <a className="btn btn--sm" href={`${GITHUB_URL}#readme`} style={{ color: 'var(--ink-2)' }}>
               Read the docs
             </a>
           </div>
         </div>
-        <div style={s('display:grid; grid-template-columns:1fr 1fr; gap:14px;')}>
+        <div className="stats">
           {STATS.map((stat) => (
-            <div key={stat.v} style={s('border:1px solid #1c1f26; border-radius:12px; background:#0c0e12; padding:18px;')}>
-              <div style={s(`font-family:'IBM Plex Mono',monospace; font-size:26px; font-weight:500; color:${stat.color};`)}>{stat.v}</div>
-              <div style={s('font-size:13px; color:#6b7280; margin-top:4px;')}>{stat.label}</div>
+            <div key={stat.v} className="stat">
+              <div className="stat__v" style={{ color: stat.accent ? 'var(--accent)' : 'var(--ink)' }}>
+                {stat.v}
+              </div>
+              <div className="stat__label">{stat.label}</div>
             </div>
           ))}
         </div>
@@ -456,20 +432,21 @@ function OpenSource() {
 
 function Requirements() {
   return (
-    <section id="requirements" style={s('max-width:1180px; margin:0 auto; padding:60px 24px;')}>
-      <div data-grid="req" style={s('border:1px solid #1c1f26; border-radius:16px; background:linear-gradient(180deg,#0f1116,#0b0d10); padding:34px; display:grid; grid-template-columns:1fr 1fr; gap:40px; align-items:center;')}>
+    <section className="shell section" id="requirements">
+      <div className="panel split" data-reveal>
         <div>
-          <p style={s(`font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:${ACCENT}; margin:0 0 10px;`)}>// requirements</p>
-          <h2 style={s('font-size:28px; letter-spacing:-0.02em; font-weight:700; margin:0 0 12px;')}>Windows-first, natively lightweight.</h2>
-          <p style={s('font-size:15px; line-height:1.6; color:#9aa0a8; margin:0;')}>
+          <p className="eyebrow">// requirements</p>
+          <h2>Windows-first, natively lightweight.</h2>
+          <p>
             Orkai is a native desktop app built with Rust + Tauri, not a web page. It ships as a small{' '}
-            <span style={s("font-family:'IBM Plex Mono',monospace; color:#cdd2d8;")}>.msi</span> and runs on the system WebView. Windows is the primary, first-class target.
+            <span className="mono" style={{ color: 'var(--ink)' }}>.msi</span> and runs on the system
+            WebView. Windows is the primary, first-class target.
           </p>
         </div>
-        <ul style={s('list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:14px;')}>
+        <ul className="reqs">
           {REQUIREMENTS.map((req) => (
-            <li key={req.text} style={s(`display:flex; gap:12px; align-items:flex-start; font-size:15px; color:${req.muted ? '#9aa0a8' : '#e6e8eb'};`)}>
-              <span style={s(`color:${req.muted ? '#6b7280' : ACCENT}; font-family:'IBM Plex Mono',monospace;`)}>›</span> {req.text}
+            <li key={req.text} className={req.muted ? 'is-muted' : undefined}>
+              {req.text}
             </li>
           ))}
         </ul>
@@ -478,15 +455,13 @@ function Requirements() {
   )
 }
 
-function FinalCTA({ downloadUrl }) {
+function FinalCTA() {
   return (
-    <section style={s('max-width:1180px; margin:0 auto; padding:20px 24px 70px;')}>
-      <div style={s('border:1px solid oklch(0.82 0.13 195 / 0.3); border-radius:18px; background:radial-gradient(700px 300px at 50% 0%, oklch(0.82 0.13 195 / 0.1), transparent 70%), #0d0f13; padding:56px 32px; text-align:center;')}>
-        <h2 style={s('font-size:34px; letter-spacing:-0.025em; font-weight:700; margin:0 0 14px;')}>Wire up your agents. Ship faster.</h2>
-        <p style={s('font-size:17px; color:#9aa0a8; margin:0 auto 30px; max-width:480px; line-height:1.55;')}>
-          Free and open-source. Download the installer and open your first canvas in seconds.
-        </p>
-        <DownloadButton href={downloadUrl} big />
+    <section className="shell section">
+      <div className="cta" data-reveal>
+        <h2>Wire up your agents. Ship faster.</h2>
+        <p>Free and open-source. Download the installer and open your first canvas in seconds.</p>
+        <DownloadButton href={DOWNLOAD_MSI} size="lg" />
         <InstallerNote />
       </div>
     </section>
@@ -495,16 +470,14 @@ function FinalCTA({ downloadUrl }) {
 
 function Footer() {
   return (
-    <footer style={s('border-top:1px solid #16191f;')}>
-      <div style={s('max-width:1180px; margin:0 auto; padding:26px 24px; display:flex; flex-wrap:wrap; gap:16px; align-items:center; justify-content:space-between;')}>
-        <div style={s('display:flex; align-items:center; gap:10px;')}>
-          <div style={s('width:22px; height:22px; border-radius:6px; border:1px solid #2a2e36; background:#0e1013; display:flex; align-items:center; justify-content:center;')}>
-            <div style={s(`width:5px; height:5px; border-radius:50%; background:${ACCENT};`)}></div>
-          </div>
-          <span style={s('font-size:14px; color:#9aa0a8;')}>Orkai · open-source visual agent orchestration</span>
+    <footer className="footer">
+      <div className="shell footer__inner">
+        <div className="footer__brand">
+          <span className="footer__mark" aria-hidden="true" />
+          Orkai · open-source visual agent orchestration
         </div>
-        <div style={s("display:flex; align-items:center; gap:22px; font-size:13.5px; color:#6b7280; font-family:'IBM Plex Mono',monospace;")}>
-          <a href={GITHUB_URL} style={s('color:#9aa0a8;')}>GitHub</a>
+        <div className="footer__meta">
+          <a href={GITHUB_URL}>GitHub</a>
           <span>MIT License</span>
           <span>© 2026</span>
         </div>
@@ -518,17 +491,28 @@ function Footer() {
 /* ------------------------------------------------------------------ */
 
 export default function App() {
+  const heroRef = useRef(null)
+  const reduced = usePrefersReducedMotion()
+  const scrolled = useScrollFx(heroRef)
+  useReveal()
+
   return (
-    <div style={s('min-height:100vh; background:radial-gradient(1200px 600px at 70% -5%, rgba(79,214,201,0.08), transparent 60%), #0a0b0d;')}>
-      <Header />
-      <Hero downloadUrl={DOWNLOAD_MSI} />
-      <Features />
-      <Agents />
-      <Workflow />
-      <OpenSource />
-      <Requirements />
-      <FinalCTA downloadUrl={DOWNLOAD_MSI} />
-      <Footer />
-    </div>
+    <>
+      <GraphScene reduced={reduced} />
+      <a className="skip-link" href="#main">Skip to content</a>
+      <div className="page">
+        <Header scrolled={scrolled} />
+        <main id="main" tabIndex={-1}>
+          <Hero heroRef={heroRef} />
+          <Features />
+          <Agents />
+          <Workflow />
+          <OpenSource />
+          <Requirements />
+          <FinalCTA />
+        </main>
+        <Footer />
+      </div>
+    </>
   )
 }
