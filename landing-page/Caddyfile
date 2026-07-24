@@ -1,4 +1,4 @@
-orkai.marujo.dev {
+:80 {
 	root * /srv
 	encode zstd gzip
 	file_server
