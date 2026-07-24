@@ -1,0 +1,41 @@
+/* Global resets + brand base */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: #0a0b0d;
+  color: #e6e8eb;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: oklch(0.82 0.12 195); text-decoration: none; }
+a:hover { color: oklch(0.9 0.1 195); }
+::selection { background: oklch(0.82 0.12 195 / 0.3); }
+
+@keyframes dashflow { to { stroke-dashoffset: -24; } }
+@keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+/* Hover states (marked !important so they win over the inline base styles) */
+.btn-primary:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: 0 10px 30px oklch(0.82 0.13 195 / 0.35) !important;
+}
+.btn-secondary:hover {
+  border-color: #3a3f49 !important;
+  background: #131519 !important;
+}
+.card-hover:hover {
+  border-color: #2c3038 !important;
+  background: #12151b !important;
+}
+.link-accent:hover { color: oklch(0.9 0.1 195) !important; }
+
+/* Responsive layout */
+@media (max-width: 860px) {
+  [data-grid="hero"], [data-grid="req"] { grid-template-columns: 1fr !important; gap: 36px !important; }
+  [data-grid="features"] { grid-template-columns: 1fr !important; }
+  [data-grid="hero"] h1 { font-size: 40px !important; }
+  [data-nav] { display: none !important; }
+}
+@media (max-width: 620px) {
+  [data-grid="hero"] h1 { font-size: 33px !important; }
+}
