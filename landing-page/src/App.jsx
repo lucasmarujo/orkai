@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react'
-
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -141,9 +139,9 @@ function Icon({ name, size = 18 }) {
 const REPO = 'lucasmarujo/orkai'
 const GITHUB_URL = `https://github.com/${REPO}`
 const RELEASES_URL = `${GITHUB_URL}/releases`
-// O nome do .msi embute a versao (Orkai_0.1.0_x64_en-US.msi), entao nao ha link
-// estatico estavel para o instalador; o fallback leva para a lista de releases.
-const STATIC_MSI = `${RELEASES_URL}/latest`
+// O workflow de release renomeia o instalador para um nome sem versao, entao este
+// link permanente sempre serve o .msi da ultima release publicada.
+const DOWNLOAD_MSI = `${RELEASES_URL}/latest/download/Orkai_x64_en-US.msi`
 
 const FEATURES = [
   { icon: 'canvas', title: 'Infinite node canvas', body: 'Terminals, notes and CLI agents are draggable nodes on an endless canvas. Wire them together to compose real workflows.' },
@@ -520,39 +518,16 @@ function Footer() {
 /* ------------------------------------------------------------------ */
 
 export default function App() {
-  const [downloadUrl, setDownloadUrl] = useState(STATIC_MSI)
-
-  useEffect(() => {
-    let cancelled = false
-    fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { Accept: 'application/vnd.github+json' },
-    })
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((data) => {
-        if (cancelled) return
-        const assets = (data && data.assets) || []
-        const msi = assets.find((a) => a.name && a.name.toLowerCase().endsWith('.msi'))
-        setDownloadUrl(msi ? msi.browser_download_url : STATIC_MSI)
-      })
-      .catch(() => {
-        // If there is no published release yet, keep users on a working page.
-        if (!cancelled) setDownloadUrl(STATIC_MSI)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
   return (
     <div style={s('min-height:100vh; background:radial-gradient(1200px 600px at 70% -5%, rgba(79,214,201,0.08), transparent 60%), #0a0b0d;')}>
       <Header />
-      <Hero downloadUrl={downloadUrl} />
+      <Hero downloadUrl={DOWNLOAD_MSI} />
       <Features />
       <Agents />
       <Workflow />
       <OpenSource />
       <Requirements />
-      <FinalCTA downloadUrl={downloadUrl} />
+      <FinalCTA downloadUrl={DOWNLOAD_MSI} />
       <Footer />
     </div>
   )
