@@ -4,13 +4,13 @@
 
 # Orkai
 
-**Workspace visual open-source para orquestração de agentes de IA.**
+**Open-source visual workspace for AI agent orchestration.**
 
-Um canvas infinito onde terminais, notas e agentes de CLI são nós que você conecta.
-A aresta não é enfeite — ela é a permissão.
+An infinite canvas where terminals, notes, and CLI agents are nodes you can connect.
+The edge is not decoration — it is the permission.
 
 <a href="https://github.com/lucasmarujo/orkai/releases/latest">
-  <img src="https://img.shields.io/badge/Baixar%20para%20Windows-.msi-4fd6c9?style=for-the-badge&logo=windows&logoColor=0a0b0d&labelColor=15181e" alt="Baixar Orkai para Windows">
+  <img src="https://img.shields.io/badge/Baixar%20para%20Windows-.msi-4fd6c9?style=for-the-badge&logo=windows&logoColor=0a0b0d&labelColor=15181e" alt="Download Orkai for Windows">
 </a>
 
 <br>
@@ -26,130 +26,133 @@ A aresta não é enfeite — ela é a permissão.
 
 ---
 
-## O que é
+## What is it
 
-Ferramentas de agente hoje escondem quem fala com quem atrás de arquivos de config. O Orkai
-põe isso na tela: cada agente, terminal ou nota é um nó, e a conexão que você desenha é o
-canal por onde eles se comunicam.
+Agent tools today hide who talks to whom behind config files. Orkai
+puts it on the screen: each agent, terminal, or note is a node, and the
+connection you draw is the channel through which they communicate.
 
-**A aresta no canvas é a ACL.** Um agente só lê e conversa com os nós ligados a ele. Não há
-permissão implícita — se não tem fio, não tem acesso.
+**The edge on the canvas is the ACL.** An agent only reads and communicates with nodes
+connected to it. There are no implicit permissions — if there is no wire, there is no
+access.
 
-### Destaques
+### Highlights
 
 | | |
 |---|---|
-| **Canvas infinito** | Terminais, notas e agentes como nós arrastáveis. Zoom, marquise, grupos e ímã de alinhamento. |
-| **Servidor MCP embutido** | Cada agente ganha ferramentas para listar peers, trocar mensagens, ler a caixa de entrada e ver o terminal do vizinho. |
-| **Modo Maestro** | Liga um orquestrador a vários workers e acompanha a delegação acontecendo. |
-| **Debugger visual de MCP** | Toda chamada entre agentes aparece na tela — dá pra ver a conversa, não só o resultado. |
-| **Workflows por projeto** | Cada workflow aponta pra uma pasta. Troque de contexto sem matar os processos que já estão rodando. |
-| **Terminais de verdade** | ConPTY nativo, não emulação. `xterm.js` com renderer WebGL. |
+| **Infinite canvas** | Terminals, notes, and agents as draggable nodes. Zoom, marquee selection, groups, and alignment snapping. |
+| **Embedded MCP server** | Each agent gets tools to list peers, exchange messages, read the inbox, and view a neighbor's terminal. |
+| **Maestro mode** | Connects an orchestrator to multiple workers and lets you watch delegation happen. |
+| **Visual MCP debugger** | Every call between agents appears on screen — you can see the conversation, not just the result. |
+| **Project workflows** | Each workflow points to a folder. Switch context without killing processes that are already running. |
+| **Real terminals** | Native ConPTY, not emulation. `xterm.js` with WebGL renderer. |
 
-Estado atual: **M4 — colaboração entre agentes**, construído sobre o M3 (agentes de CLI como nós).
+Current state: **M4 — agent collaboration**, built on top of M3 (CLI agents as nodes).
 
-## Instalação
+## Installation
 
-Baixe o instalador mais recente na
-**[página de releases](https://github.com/lucasmarujo/orkai/releases/latest)**:
+Download the latest installer from the
+**[releases page](https://github.com/lucasmarujo/orkai/releases/latest)**:
 
-| Arquivo | Quando usar |
+| File | When to use |
 |---|---|
-| `Orkai_x.y.z_x64_en-US.msi` | Instalação padrão, para toda a máquina. Pede admin. |
-| `Orkai_x.y.z_x64-setup.exe` | Instalador NSIS, por usuário. Não pede admin. |
+| `Orkai_x.y.z_x64_en-US.msi` | Standard installation, for the entire machine. Requires admin. |
+| `Orkai_x.y.z_x64-setup.exe` | NSIS installer, per-user. Does not require admin. |
 
-O binário não é assinado, então o SmartScreen vai avisar na primeira execução —
-**Mais informações → Executar assim mesmo**.
+The binary is not signed, so SmartScreen will warn on the first launch —
+**More info → Run anyway**.
 
-## Requisitos
+## Requirements
 
-Para **usar**, basta Windows 10/11 com WebView2 (já vem no Windows 11).
+For **usage**, Windows 10/11 with WebView2 is enough (already included with Windows 11).
 
-Para **compilar**:
+For **building**:
 
-- [Rust](https://rustup.rs) com toolchain MSVC
-- Visual Studio Build Tools 2022, workload **Desenvolvimento para desktop com C++**
+- [Rust](https://rustup.rs) with MSVC toolchain
+- Visual Studio Build Tools 2022, workload **Desktop development with C++**
 - Node.js 22+
 
-## Rodando do código-fonte
+## Running from source
 
 ```powershell
 git clone https://github.com/lucasmarujo/orkai.git
 cd orkai
 npm install
 npm run tauri dev
-```
 
-Para gerar os instaladores:
+To generate installers:
 
 ```powershell
 npm run tauri build
 ```
 
-Os bundles saem em `target/release/bundle/` (`msi/` e `nsis/`). O primeiro build compila
-todas as dependências do Rust e leva 10-15 minutos; os seguintes são bem mais rápidos.
+The bundles are generated in `target/release/bundle/` (`msi/` and `nsis/`). The first build
+compiles all Rust dependencies and takes 10-15 minutes; following builds are much faster.
 
-## Atalhos
+## Shortcuts
 
-| Ação | Como |
-|---|---|
-| Mover o canvas | Arrastar o fundo, ou botão do meio |
-| Zoom | Roda do mouse (mantém fixo o ponto sob o cursor) |
-| Selecionar vários | Shift + arrastar (marquise); Ctrl + arrastar soma à seleção |
-| Alternar um nó | Shift/Ctrl + clique |
-| Limpar seleção | Clique no fundo, ou Esc |
-| Conectar nós | Arrastar a bolinha da borda direita até outro nó |
-| Remover conexão | Clicar sobre a curva |
-| Desligar o ímã | Segurar Alt durante o arrasto |
-| Desfazer / Refazer | Ctrl+Z / Ctrl+Shift+Z (ou Ctrl+Y) |
-| Selecionar tudo | Ctrl+A |
-| Excluir seleção | Delete |
-| Zoom 100% / Enquadrar tudo | Ctrl+0 / Ctrl+1 |
+| Action              | How                                                   |
+| ------------------- | ----------------------------------------------------- |
+| Move canvas         | Drag the background, or use the middle mouse button   |
+| Zoom                | Mouse wheel (keeps the point under the cursor fixed)  |
+| Select multiple     | Shift + drag (marquee); Ctrl + drag adds to selection |
+| Toggle a node       | Shift/Ctrl + click                                    |
+| Clear selection     | Click the background, or Esc                          |
+| Connect nodes       | Drag the dot on the right edge to another node        |
+| Remove connection   | Click the curve                                       |
+| Disable snapping    | Hold Alt while dragging                               |
+| Undo / Redo         | Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y)                     |
+| Select all          | Ctrl+A                                                |
+| Delete selection    | Delete                                                |
+| Zoom 100% / Fit all | Ctrl+0 / Ctrl+1                                       |
 
-Arrastar um **grupo** move tudo que estiver inteiramente dentro dele.
+Dragging a **group** moves everything fully contained inside it.
 
-## Verificação
+## Verification
 
 ```powershell
 npm run lint        # eslint
 npm run typecheck   # tsc --noEmit
 npm test            # vitest
 
-npm run build       # necessário antes do cargo: generate_context! lê o dist/
+npm run build       # required before cargo: generate_context! reads the dist/
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-## Estrutura
+## Structure
 
 ```
-apps/desktop/          React + TypeScript e o binário Tauri (src-tauri/)
-crates/orkai-core/     Domínio: Workspace, Node, Connection, Viewport, UndoStack (sem I/O)
-crates/orkai-storage/  SQLite via sqlx, migrations, repositório
-crates/orkai-pty/      PtyBackend + implementação ConPTY
-landing-page/          Site de divulgação (React + Vite, deploy via Docker + Caddy)
-docs/adr/              Decisões de arquitetura
-plans/                 Visão e plano de construção
+apps/desktop/          React + TypeScript and the Tauri binary (src-tauri/)
+crates/orkai-core/     Domain: Workspace, Node, Connection, Viewport, UndoStack (no I/O)
+crates/orkai-storage/  SQLite via sqlx, migrations, repository
+crates/orkai-pty/      PtyBackend + ConPTY implementation
+landing-page/          Marketing website (React + Vite, deployed via Docker + Caddy)
+docs/adr/              Architecture decisions
+plans/                 Vision and development plan
 ```
 
-O `target/` do Cargo é redirecionado para fora do OneDrive por `.cargo/config.toml`
-— a sincronização trava a compilação.
+The Cargo `target/` directory is redirected outside OneDrive through `.cargo/config.toml`
+— synchronization blocks compilation.
 
-## Decisões de arquitetura
+## Architecture decisions
 
-- [ADR-001 — Canvas híbrido DOM + GPU](docs/adr/0001-canvas-hibrido-dom-gpu.md)
-- [ADR-002 — Fonte da verdade no Rust](docs/adr/0002-estado-no-rust.md)
-- [ADR-003 — SQLite para estrutura, disco para conteúdo](docs/adr/0003-sqlite-mais-arquivos.md)
+* [ADR-001 — Hybrid DOM + GPU Canvas](docs/adr/0001-canvas-hibrido-dom-gpu.md)
+* [ADR-002 — Source of truth in Rust](docs/adr/0002-estado-no-rust.md)
+* [ADR-003 — SQLite for structure, disk for content](docs/adr/0003-sqlite-mais-arquivos.md)
 
-## Contribuindo
+## Contributing
 
-Issues e pull requests são bem-vindos. Antes de abrir um PR, rode o bloco de
-[verificação](#verificação) — o CI roda exatamente esses comandos e reprova em warning
-do clippy.
+Issues and pull requests are welcome. Before opening a PR, run the
+[verification](#verification) block — CI runs exactly these commands and fails on clippy
+warnings.
 
-Para lançar uma nova versão, veja [RELEASING.md](RELEASING.md).
+To release a new version, see [RELEASING.md](RELEASING.md).
 
-## Licença
+## License
 
 [MIT](LICENSE.md) © 2026 [Lucas Marujo Amadeu](https://github.com/lucasmarujo)
+
+```
+```
