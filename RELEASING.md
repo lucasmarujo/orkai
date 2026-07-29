@@ -202,9 +202,11 @@ auto-update quebrado em silêncio, o pior dos dois mundos.
 ## A primeira release
 
 Ainda não há release publicada, então o botão da landing page dá 404 hoje. A versão atual
-(`0.1.0`) nunca foi lançada, então basta subir qualquer mudança no app — ou disparar o
-workflow na mão em **Actions → Release → Run workflow**, que também respeita o gate de
-versão.
+nunca foi lançada, então basta subir qualquer mudança no app — ou disparar o workflow na mão
+em **Actions → Release → Run workflow**, que também respeita o gate de versão.
+
+O auto-update só se prova da segunda release em diante: a primeira não tem versão anterior
+de onde sair.
 
 ## Desfazendo uma release
 

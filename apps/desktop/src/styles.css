@@ -1019,17 +1019,57 @@ body.is-resizing {
   height: 100%;
 }
 
-.markdown-swatches {
+/* Paleta e botão de modo dividem a barra: some junto até o hover/seleção. */
+.markdown-bar {
   display: flex;
-  gap: 5px;
-  padding: 5px 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 8px;
   opacity: 0;
   transition: opacity 120ms ease;
 }
 
-.node:hover .markdown-swatches,
-.node--selected .markdown-swatches {
+.node:hover .markdown-bar,
+.node--selected .markdown-bar {
   opacity: 1;
+}
+
+.markdown-swatches {
+  display: flex;
+  gap: 5px;
+  padding: 5px 8px;
+}
+
+.markdown-modo {
+  flex: none;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.markdown-modo:hover {
+  color: var(--text);
+}
+
+/* Editor em cima, preview ao vivo embaixo. */
+.markdown-split {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.markdown-split > .markdown-host {
+  flex: 1 1 50%;
+}
+
+.markdown-split > .markdown-preview {
+  border-top: 1px solid var(--border);
 }
 
 .markdown-swatch {
@@ -1096,7 +1136,8 @@ body.is-resizing {
   max-width: 100%;
 }
 
-.markdown-preview:empty::after {
+/* Só na leitura: no split, um preview vazio é apenas o reflexo do editor vazio. */
+.markdown-preview--leitura:empty::after {
   content: 'Clique duplo para editar';
   color: var(--text-dim);
 }

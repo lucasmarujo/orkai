@@ -20,6 +20,9 @@ export const CORES_NOTA: Record<string, string> = {
   rose: '#3a1620',
 };
 
+/** Como a nota é exibida. `fonte` mostra o Markdown cru; `estilizado`, o resultado. */
+type ModoVisualizacao = 'estilizado' | 'fonte';
+
 /**
  * O `.md` continua sendo um arquivo de verdade no disco: o banco guarda so o
  * ponteiro e a posicao do no.
@@ -30,6 +33,9 @@ export function MarkdownNode({ node }: { node: CanvasNode }) {
   const setNoteColor = useWorkspaceStore((s) => s.setNoteColor);
   const [conteudo, setConteudo] = useState('');
   const [editando, setEditando] = useState(false);
+  // ponytail: preferência de sessão, não persistida — persistir exigiria campo no NodeKind
+  // e migração do banco. Se o modo tiver que sobreviver ao restart, aí vale o campo.
+  const [modo, setModo] = useState<ModoVisualizacao>('estilizado');
   const [erro, setErro] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fundo = CORES_NOTA[cor] ?? CORES_NOTA[''];
@@ -66,43 +72,76 @@ export function MarkdownNode({ node }: { node: CanvasNode }) {
 
   if (erro) return <div className="markdown-host markdown-host--erro">{erro}</div>;
 
-  return (
-    <div className="markdown-wrap" style={{ background: fundo }}>
-      <div className="markdown-swatches" role="group" aria-label="Cor da nota">
-        {Object.keys(CORES_NOTA).map((chave) => (
-          <button
-            key={chave || 'default'}
-            type="button"
-            className={`markdown-swatch ${chave === cor ? 'is-active' : ''}`}
-            style={{ background: CORES_NOTA[chave] }}
-            title={chave || 'padrão'}
-            aria-label={`Cor ${chave || 'padrão'}`}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={() => void setNoteColor(node.id, chave)}
-          />
-        ))}
-      </div>
+  const editor = (
+    <textarea
+      ref={textareaRef}
+      className="markdown-host markdown-host--editor"
+      value={conteudo}
+      spellCheck={false}
+      aria-label="Markdown da nota"
+      onChange={(e) => aoEditar(e.target.value)}
+      onBlur={() => setEditando(false)}
+    />
+  );
 
-      {editando ? (
-        <textarea
-          ref={textareaRef}
-          className="markdown-host markdown-host--editor"
-          value={conteudo}
-          spellCheck={false}
-          onChange={(e) => aoEditar(e.target.value)}
-          onBlur={() => setEditando(false)}
-        />
-      ) : (
+  // Modo fonte: o `.md` cru é a própria área de edição, sem preview nenhum.
+  // Modo estilizado: só o resultado, e ao editar ele fica ao vivo abaixo do editor.
+  let corpo;
+  if (modo === 'fonte') {
+    corpo = editor;
+  } else if (editando) {
+    corpo = (
+      <div className="markdown-split">
+        {editor}
         <div
           className="markdown-host markdown-preview"
-          role="button"
-          tabIndex={0}
-          title="Clique duplo para editar"
-          onDoubleClick={() => setEditando(true)}
-          onKeyDown={(e) => e.key === 'Enter' && setEditando(true)}
           dangerouslySetInnerHTML={{ __html: html }}
         />
-      )}
+      </div>
+    );
+  } else {
+    corpo = (
+      <div
+        className="markdown-host markdown-preview markdown-preview--leitura"
+        role="button"
+        tabIndex={0}
+        title="Clique duplo para editar"
+        onDoubleClick={() => setEditando(true)}
+        onKeyDown={(e) => e.key === 'Enter' && setEditando(true)}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+
+  return (
+    <div className="markdown-wrap" style={{ background: fundo }}>
+      <div className="markdown-bar">
+        <div className="markdown-swatches" role="group" aria-label="Cor da nota">
+          {Object.keys(CORES_NOTA).map((chave) => (
+            <button
+              key={chave || 'default'}
+              type="button"
+              className={`markdown-swatch ${chave === cor ? 'is-active' : ''}`}
+              style={{ background: CORES_NOTA[chave] }}
+              title={chave || 'padrão'}
+              aria-label={`Cor ${chave || 'padrão'}`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => void setNoteColor(node.id, chave)}
+            />
+          ))}
+        </div>
+        <button
+          type="button"
+          className="markdown-modo"
+          title={modo === 'estilizado' ? 'Ver o Markdown sem estilo' : 'Ver o Markdown com estilo'}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setModo((m) => (m === 'estilizado' ? 'fonte' : 'estilizado'))}
+        >
+          {modo === 'estilizado' ? 'Sem estilo' : 'Com estilo'}
+        </button>
+      </div>
+
+      {corpo}
     </div>
   );
 }
