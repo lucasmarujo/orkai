@@ -149,6 +149,55 @@ Recursos. É só o nome do arquivo que é fixo.
 |---|---|
 | `Orkai_x64_en-US.msi` | Instalador MSI, para toda a máquina. Pede admin. É o que a landing page serve. |
 | `Orkai_x64-setup.exe` | Instalador NSIS, por usuário. Não pede admin. |
+| `latest.json` | Manifesto do auto-update. É o que o app instalado consulta no boot. |
+
+## Auto-update
+
+O app se atualiza sozinho. A cada boot ele lê o `latest.json` da última release; se a
+versão de lá for maior que a instalada, pergunta ao usuário. Aceitando, o próprio app
+baixa o `.msi`, valida a assinatura, roda o instalador e reinicia já atualizado — sem
+passar pela landing page.
+
+Recusando, ou estando na versão mais recente, nada aparece e o app abre direto. Falha de
+rede também não bloqueia o boot: a checagem desiste em silêncio.
+
+O `.msi` é o artefato servido de propósito, por ser o mesmo instalador da landing page —
+usar o NSIS deixaria duas instalações do Orkai na máquina. O preço é o prompt do UAC
+durante a atualização, que instalação para toda a máquina sempre exige.
+
+### A chave de assinatura
+
+O updater só aceita um pacote assinado com a chave cujo público está no
+`tauri.conf.json` (`plugins.updater.pubkey`). O par vive fora do repositório:
+
+| | |
+|---|---|
+| Privada | `~/.tauri/orkai-updater.key` — **backup obrigatório** |
+| Pública | `~/.tauri/orkai-updater.key.pub` — já embutida no `tauri.conf.json` |
+
+Perder a privada significa não conseguir mais atualizar quem já instalou: seria preciso
+gerar outro par, publicar uma versão com o novo `pubkey` e fazer todo mundo reinstalar na
+mão. Guarde em outro lugar.
+
+Uma única secret no repositório (**Settings → Secrets and variables → Actions**) faz o
+workflow assinar:
+
+| Secret | Valor |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | conteúdo do arquivo `orkai-updater.key` |
+
+```powershell
+Get-Content $HOME\.tauri\orkai-updater.key -Raw | Set-Clipboard   # e cole na interface web
+```
+
+O workflow também passa `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, mas a chave foi gerada **sem
+senha** e o GitHub não aceita secret de valor vazio — então essa secret não deve existir.
+Secret inexistente resolve para string vazia, que é exatamente o que o CLI espera. Se um
+dia a chave ganhar senha, basta criar a secret; o workflow não muda.
+
+Sem a secret da chave privada o passo `Gerar latest.json do updater` falha o build — de
+propósito. Uma release sem assinatura sairia com o botão de download funcionando e o
+auto-update quebrado em silêncio, o pior dos dois mundos.
 
 ## A primeira release
 
@@ -186,14 +235,26 @@ Tem que ser exatamente `Orkai_x64_en-US.msi`.
 **O SmartScreen bloqueia o instalador.** Esperado — o binário não é assinado. Resolver
 exige um certificado de code signing pago.
 
+**O app não oferece a atualização.** Confira se o `latest.json` está entre os assets da
+release e se a versão dentro dele é maior que a instalada. Se o app baixa mas recusa
+instalar, a assinatura não bate com o `pubkey` do `tauri.conf.json` — sinal de que a secret
+`TAURI_SIGNING_PRIVATE_KEY` é de outro par de chaves.
+
 ## Build local
 
 Para gerar os instaladores na sua máquina, sem passar pelo CI:
 
 ```powershell
 cd apps/desktop
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $HOME\.tauri\orkai-updater.key -Raw
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
 npx tauri build
 ```
+
+As duas variáveis são obrigatórias desde o auto-update: com `pubkey` no `tauri.conf.json`
+e sem chave privada, o build gera os instaladores e **falha** ao assinar. Note que é o
+*conteúdo* da chave — o CLI 2.x ignora `TAURI_SIGNING_PRIVATE_KEY_PATH`. A de senha tem que
+existir mesmo vazia: sem ela o CLI abre um prompt e o build fica travado esperando.
 
 Saem em `C:\orkai-build\target\release\bundle\` (`msi\` e `nsis\`) — caminho definido pelo
 `.cargo/config.toml`, que tira o `target/` do OneDrive porque a sincronização trava a
@@ -203,7 +264,6 @@ compilação. Aqui os nomes **mantêm** a versão; quem renomeia é o workflow.
 
 - **Bump de versão** — os quatro arquivos, na mão. É de propósito: é o gate que impede
   uma release por commit.
-- **Assinatura de código** — sem certificado, todo release avisa no SmartScreen.
-- **Auto-update no app** — o plugin `updater` do Tauri não está instalado; o usuário baixa
-  e reinstala manualmente.
+- **Assinatura de código** — sem certificado, todo release avisa no SmartScreen. Vale para
+  o auto-update também: o instalador baixado pelo app pode disparar o aviso.
 - **macOS e Linux** — os targets do bundle são só `msi` e `nsis`.

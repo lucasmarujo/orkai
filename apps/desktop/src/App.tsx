@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { Canvas } from './canvas/Canvas';
+import { checkForUpdate } from './ipc/updater';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { AgentPanel } from './ui/AgentPanel';
 import { Toolbar } from './ui/Toolbar';
@@ -16,6 +17,11 @@ export function App() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Sem await: estando atualizado a checagem não aparece, e o canvas não espera a rede.
+  useEffect(() => {
+    void checkForUpdate();
+  }, []);
 
   // Recuperacao de crash: o viewport tem debounce, entao um fechamento abrupto perderia
   // o ultimo pan/zoom. Os nos ja sao persistidos no fim de cada gesto.

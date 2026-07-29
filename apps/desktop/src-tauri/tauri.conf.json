@@ -29,6 +29,13 @@
   "bundle": {
     "active": true,
     "targets": ["msi", "nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://github.com/lucasmarujo/orkai/releases/latest/download/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhCOUY0NUM3NTc5MDc0NDQKUldSRWRKQlh4MFdmaTlHakZ4MnNZaS9vUkpKZXhCRXladmV0VUhiYWRlV3pJOUI1Rlp4YW5qTngK"
+    }
   }
 }

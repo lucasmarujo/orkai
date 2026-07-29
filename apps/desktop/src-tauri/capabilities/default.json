@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Permissoes da janela principal. Acesso a disco e processo passa pelos comandos do app, nunca por plugin generico.",
   "windows": ["main"],
-  "permissions": ["core:default", "notification:default", "dialog:default"]
+  "permissions": [
+    "core:default",
+    "notification:default",
+    "dialog:default",
+    "updater:default",
+    "process:allow-restart"
+  ]
 }
