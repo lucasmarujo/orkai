@@ -1,0 +1,4 @@
+# O checksum das migrations do sqlx e calculado sobre os bytes do arquivo: com
+# core.autocrlf o checkout no Windows vira CRLF e o banco ja aplicado passa a
+# acusar "migration was previously applied but has been modified".
+*.sql text eol=lf

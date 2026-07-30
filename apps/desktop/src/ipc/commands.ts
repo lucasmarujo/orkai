@@ -98,3 +98,7 @@ export const ptyScrollback = (nodeId: string): Promise<string> =>
 export const ptyKill = (nodeId: string): Promise<void> => invoke('pty_kill', { nodeId });
 
 export const ptyDefaultShell = (): Promise<string> => invoke('pty_default_shell');
+
+/** Se o binário do agente existe no PATH, pela mesma resolução que o spawn usa. */
+export const commandAvailable = (command: string): Promise<boolean> =>
+  invoke('command_available', { command });

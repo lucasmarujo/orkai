@@ -60,6 +60,7 @@ pub fn run() {
             commands::pty_scrollback,
             commands::pty_kill,
             commands::pty_default_shell,
+            commands::command_available,
         ])
         .run(tauri::generate_context!())
         .expect("falha ao iniciar o Orkai");

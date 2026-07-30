@@ -526,6 +526,15 @@ pub fn pty_default_shell() -> String {
     default_shell()
 }
 
+/// Se o binario de um agente existe no PATH, pela mesma resolucao que o spawn usa.
+///
+/// O dialogo pergunta antes de criar: sem isto, escolher um provider nao instalado
+/// cria um no que morre no primeiro spawn com "os error 2" e nao explica o porque.
+#[tauri::command]
+pub fn command_available(command: String) -> bool {
+    orkai_pty::resolve(&command).is_some()
+}
+
 /// Flags que conectam o CLI do agente ao servidor MCP do Orkai.
 ///
 /// So o Claude Code esta cabeado aqui: aceita `--mcp-config` com JSON inline. Codex e

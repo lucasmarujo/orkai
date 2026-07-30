@@ -34,6 +34,18 @@ const TEMA = {
 
 const RESIZE_DEBOUNCE_MS = 80;
 
+const FONT_SIZE_PADRAO = 13;
+const FONT_SIZE_MIN = 8;
+const FONT_SIZE_MAX = 32;
+
+/** Um ponto de fonte por entalhe da roda; `deltaY` cresce ao rolar para baixo. */
+export function nextFontSize(atual: number, deltaY: number): number {
+  if (!Number.isFinite(atual)) return FONT_SIZE_PADRAO;
+  if (deltaY === 0) return atual;
+  const alvo = atual + (deltaY < 0 ? 1 : -1);
+  return Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, alvo));
+}
+
 /**
  * Liga um `<div>` a um PTY do backend: xterm.js + ConPTY.
  *
@@ -62,7 +74,7 @@ export function usePtySession(nodeId: string, hooks: PtyHooks = {}) {
     const term = new Terminal({
       theme: TEMA,
       fontFamily: 'Cascadia Mono, Consolas, monospace',
-      fontSize: 13,
+      fontSize: FONT_SIZE_PADRAO,
       cursorBlink: true,
       allowProposedApi: true,
       scrollback: 10_000,
@@ -120,18 +132,37 @@ export function usePtySession(nodeId: string, hooks: PtyHooks = {}) {
     // O resize e o que costuma quebrar TUI (vim, btop): sempre ConPTY depois do fit,
     // com debounce para nao inundar durante o arrasto.
     let timerResize: ReturnType<typeof setTimeout> | undefined;
-    const observer = new ResizeObserver(() => {
+    const reajustar = () => {
       if (timerResize !== undefined) clearTimeout(timerResize);
       timerResize = setTimeout(() => {
         fit.fit();
         void api.ptyResize(nodeId, term.cols, term.rows);
       }, RESIZE_DEBOUNCE_MS);
-    });
+    };
+    const observer = new ResizeObserver(reajustar);
     observer.observe(host);
+
+    // Ctrl+roda muda o corpo da fonte, como em qualquer emulador de terminal. Em captura
+    // e com o evento interrompido: senao o xterm rolaria o scrollback e o canvas daria
+    // zoom no no inteiro no mesmo gesto.
+    const aoRolar = (evento: WheelEvent) => {
+      if (!evento.ctrlKey) return;
+      evento.preventDefault();
+      evento.stopPropagation();
+
+      const atual = term.options.fontSize ?? FONT_SIZE_PADRAO;
+      const proximo = nextFontSize(atual, evento.deltaY);
+      if (proximo === atual) return;
+
+      term.options.fontSize = proximo;
+      reajustar();
+    };
+    host.addEventListener('wheel', aoRolar, { capture: true, passive: false });
 
     return () => {
       vivo = false;
       if (timerResize !== undefined) clearTimeout(timerResize);
+      host.removeEventListener('wheel', aoRolar, { capture: true });
       observer.disconnect();
       aoDigitar.dispose();
       descartar.forEach((off) => off());

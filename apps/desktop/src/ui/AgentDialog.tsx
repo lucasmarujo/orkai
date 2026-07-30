@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { BUILTIN_ROLES, PROVIDERS, buildAgentKind } from '../agents/profiles';
+import * as api from '../ipc/commands';
 import type { NodeKind } from '../ipc/types';
 import { useRoles } from '../stores/rolesStore';
 
@@ -25,13 +26,35 @@ export function AgentDialog({ defaultCwd, onCancel, onCreate }: Props) {
   const [providerId, setProviderId] = useState(PROVIDERS[0]!.id);
   const [roleId, setRoleId] = useState(BUILTIN_ROLES[0]!.id);
   const [cwd, setCwd] = useState(defaultCwd);
+  // `undefined` enquanto a checagem não voltou: não acusa ausência antes de saber.
+  const [instalado, setInstalado] = useState<boolean | undefined>(undefined);
+
+  const provider = PROVIDERS.find((p) => p.id === providerId)!;
 
   useEffect(() => {
     void loadRoles();
   }, [loadRoles]);
 
+  // Sem isto, escolher um provider que não está no PATH cria um nó que morre no
+  // primeiro spawn com "os error 2", sem dizer que o CLI não está instalado.
+  useEffect(() => {
+    let vivo = true;
+    setInstalado(undefined);
+    void api
+      .commandAvailable(provider.command)
+      .then((ok) => {
+        if (vivo) setInstalado(ok);
+      })
+      .catch(() => {
+        // Falha na checagem não bloqueia a criação: o spawn ainda reporta o erro.
+        if (vivo) setInstalado(true);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [provider.command]);
+
   const criar = () => {
-    const provider = PROVIDERS.find((p) => p.id === providerId)!;
     const role = roles.find((r) => r.id === roleId) ?? roles[0]!;
     onCreate(buildAgentKind(provider, role, cwd.trim() || defaultCwd));
   };
@@ -51,6 +74,12 @@ export function AgentDialog({ defaultCwd, onCancel, onCreate }: Props) {
             ))}
           </select>
         </label>
+        {/* Fora do `<label>`: dentro, o aviso entraria no nome acessível do campo. */}
+        {instalado === false && (
+          <p className="dialog__aviso" role="alert">
+            {`\`${provider.command}\` não foi encontrado no PATH. Instale o CLI do ${provider.label} e reabra o Orkai.`}
+          </p>
+        )}
 
         <label className="dialog__field">
           <span>Role</span>
@@ -78,7 +107,12 @@ export function AgentDialog({ defaultCwd, onCancel, onCreate }: Props) {
           <button type="button" onClick={onCancel}>
             Cancelar
           </button>
-          <button type="button" className="dialog__primary" onClick={criar}>
+          <button
+            type="button"
+            className="dialog__primary"
+            disabled={instalado === false}
+            onClick={criar}
+          >
             Criar agente
           </button>
         </div>

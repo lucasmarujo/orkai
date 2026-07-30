@@ -194,7 +194,9 @@ export function NodeFrame({
           evento.stopPropagation();
           onStartConnection(node, evento);
         }}
-      />
+      >
+        +
+      </button>
 
       {/* Uma alça por borda e por canto: redimensiona de qualquer lado. */}
       {HANDLES.map((h) => (
