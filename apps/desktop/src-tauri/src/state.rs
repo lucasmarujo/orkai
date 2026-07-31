@@ -58,6 +58,9 @@ pub struct AppState {
     pub mcp_port: u16,
     /// Log das chamadas MCP recentes, para o debugger visual de agente.
     pub mcp_log: crate::mcp_server::McpLog,
+    /// Estado de atencao dos agentes. `Arc` porque o callback do PTY o alimenta de
+    /// dentro da thread da sessao, fora do escopo do `State<'_>`.
+    pub attention: Arc<crate::attention::Attention>,
 }
 
 impl AppState {

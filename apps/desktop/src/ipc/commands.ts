@@ -40,6 +40,25 @@ export const workflowActivate = (id: string): Promise<Workspace> =>
 export const rolesLoad = (): Promise<string> => invoke('roles_load');
 export const rolesSave = (json: string): Promise<void> => invoke('roles_save', { json });
 
+/** Biblioteca de prompts, mesmo contrato de blob opaco das roles. */
+export const promptsLoad = (): Promise<string> => invoke('prompts_load');
+export const promptsSave = (json: string): Promise<void> => invoke('prompts_save', { json });
+
+// ---------------------------------------------------------------- busca (M6)
+
+export interface SearchHit {
+  /** Caminho relativo à raiz do workflow. */
+  path: string;
+  /** Trecho recortado pelo FTS5, com o termo entre `[` e `]`. */
+  snippet: string;
+}
+
+/** Reconstrói o índice do workflow ativo. Devolve quantos arquivos entraram. */
+export const searchReindex = (): Promise<number> => invoke('search_reindex');
+
+export const searchQuery = (query: string): Promise<SearchHit[]> =>
+  invoke('search_query', { query });
+
 /** Devolve `null` quando a aresta e recusada (laço, duplicata, nó inexistente). */
 export const connectionCreate = (from: string, to: string): Promise<Connection | null> =>
   invoke('connection_create', { from, to });
@@ -73,6 +92,88 @@ export const mcpActivity = (): Promise<McpCall[]> => invoke('mcp_activity');
 /** Liga um orquestrador a vários workers de uma vez. Devolve as arestas criadas. */
 export const connectMaestro = (orchestrator: string, workers: string[]): Promise<Connection[]> =>
   invoke('connect_maestro', { orchestrator, workers });
+
+// ---------------------------------------------------------------- atenção
+
+/** Espelho de `AgentStatus` (Rust, `attention.rs`). */
+export type AttentionStatus = 'running' | 'waiting' | 'idle' | 'exited';
+
+export interface AgentAttention {
+  nodeId: string;
+  status: AttentionStatus;
+  /** Instante da última saída, em ms desde a epoch. */
+  since: number;
+}
+
+/** Quem está produzindo e quem parou numa pergunta. Alimenta o anel do nó. */
+export const agentAttention = (): Promise<AgentAttention[]> => invoke('agent_attention');
+
+// ---------------------------------------------------------------- git
+
+/** Espelho de `WorktreeStatus` (Rust, `git.rs`), achatado com o nó dono. */
+export interface AgentWorktree {
+  nodeId: string;
+  branch: string;
+  added: number;
+  removed: number;
+  /** Há mudança não commitada — `gitWorktreeMerge` só leva o que está commitado. */
+  dirty: boolean;
+}
+
+/** A pasta do workflow ativo é um repositório git? Decide se o isolamento é oferecido. */
+export const gitWorkflowIsRepo = (): Promise<boolean> => invoke('git_workflow_is_repo');
+
+/** Cria o worktree do agente e devolve a pasta, para virar o `cwd` dele. */
+export const gitWorktreeCreate = (name: string): Promise<string> =>
+  invoke('git_worktree_create', { name });
+
+export const gitAgentsStatus = (): Promise<AgentWorktree[]> => invoke('git_agents_status');
+
+/** Integra a branch do agente no repositório principal. Devolve a saída do `git merge`. */
+export const gitWorktreeMerge = (nodeId: string): Promise<string> =>
+  invoke('git_worktree_merge', { nodeId });
+
+/** Descarta o trabalho do agente: mata o processo e apaga worktree e branch. */
+export const gitWorktreeDiscard = (nodeId: string): Promise<void> =>
+  invoke('git_worktree_discard', { nodeId });
+
+/** Um arquivo mexido, como o `GitNode` lista. */
+export interface GitFile {
+  path: string;
+  /** Código do `git status --porcelain`: `M`, `A`, `D`, `R` ou `?` (não rastreado). */
+  status: string;
+  added: number;
+  removed: number;
+}
+
+export interface GitNodeStatus {
+  /** Agente dono do worktree, ou `null` quando o nó olha a raiz do workflow. */
+  ownerId: string | null;
+  branch: string;
+  dirty: boolean;
+  /** Só num worktree do Orkai integrar/descartar fazem sentido. */
+  isWorktree: boolean;
+  files: GitFile[];
+}
+
+/** Status do repositório que o `GitNode` observa — a conexão decide qual é. */
+export const gitNodeStatus = (nodeId: string): Promise<GitNodeStatus> =>
+  invoke('git_node_status', { nodeId });
+
+export const gitNodeDiff = (nodeId: string, path: string): Promise<string> =>
+  invoke('git_node_diff', { nodeId, path });
+
+// ---------------------------------------------------------------- árvore de arquivos
+
+export interface DirEntry {
+  name: string;
+  /** Caminho relativo à raiz do workflow, sempre com `/`. */
+  path: string;
+  isDir: boolean;
+}
+
+/** Conteúdo de uma pasta do workflow, um nível só (a árvore carrega o que expande). */
+export const dirList = (path: string): Promise<DirEntry[]> => invoke('dir_list', { path });
 
 export const viewportSave = (viewport: Viewport): Promise<void> =>
   invoke('viewport_save', { viewport });

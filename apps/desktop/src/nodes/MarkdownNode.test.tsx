@@ -1,8 +1,14 @@
+import { listen } from '@tauri-apps/api/event';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CanvasNode } from '../ipc/types';
 import { MarkdownNode } from './MarkdownNode';
+
+// A nota escuta `note://changed` para recarregar quando um agente escreve nela.
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async () => () => undefined),
+}));
 
 // A nota lê e escreve um arquivo de verdade; nos testes o backend não existe.
 vi.mock('../ipc/commands', () => ({
@@ -75,6 +81,36 @@ describe('MarkdownNode', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
     // O editor continua ali junto do preview — é isso que faz o "ao vivo".
     expect(editor()).toBeTruthy();
+  });
+
+  it('recarrega quando um agente escreve na nota', async () => {
+    render(<MarkdownNode node={nota} />);
+    await screen.findByRole('heading', { level: 1, name: 'Título' });
+
+    const api = await import('../ipc/commands');
+    vi.mocked(api.fileRead).mockResolvedValueOnce('# Escrito pelo agente');
+
+    // Dispara o evento que o `orkai_note` emite do backend.
+    const inscricao = vi.mocked(listen).mock.calls.find(([nome]) => nome === 'note://changed');
+    const aoMudar = inscricao![1] as (evento: { payload: string }) => void;
+    aoMudar({ payload: 'a.md' });
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: 'Escrito pelo agente' })).toBeTruthy();
+    });
+  });
+
+  it('ignora evento de outra nota', async () => {
+    render(<MarkdownNode node={nota} />);
+    await screen.findByRole('heading', { level: 1, name: 'Título' });
+
+    const api = await import('../ipc/commands');
+    const inscricao = vi.mocked(listen).mock.calls.find(([nome]) => nome === 'note://changed');
+    const aoMudar = inscricao![1] as (evento: { payload: string }) => void;
+    vi.mocked(api.fileRead).mockClear();
+    aoMudar({ payload: 'outra.md' });
+
+    expect(api.fileRead).not.toHaveBeenCalled();
   });
 
   it('sanitiza o HTML embutido no Markdown', async () => {

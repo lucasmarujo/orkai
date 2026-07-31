@@ -8,6 +8,7 @@ use orkai_pty::PtyRegistry;
 use orkai_storage::WorkspaceRepository;
 use serde::Serialize;
 use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter};
 use tiny_http::{Header, Method, Response, Server};
 
 /// Trecho final do scrollback exposto pelo `read_peer_output`, em bytes.
@@ -80,6 +81,8 @@ struct AppMcpContext {
     ptys: Arc<PtyRegistry>,
     /// Fallback quando o workflow nao tem pasta propria (ver `workflow_root`).
     default_dir: PathBuf,
+    /// Para avisar o front quando um agente escreve numa nota (`orkai_note`).
+    app: AppHandle,
 }
 
 impl AppMcpContext {
@@ -117,6 +120,8 @@ fn display_name(kind: &NodeKind) -> String {
         NodeKind::Terminal { .. } => "Terminal".into(),
         NodeKind::Markdown { .. } => "Nota".into(),
         NodeKind::Frame { title } => title.clone(),
+        NodeKind::Git {} => "Git".into(),
+        NodeKind::FileTree { .. } => "Arquivos".into(),
     }
 }
 
@@ -206,6 +211,71 @@ impl McpContext for AppMcpContext {
             }),
         }
     }
+
+    fn write_note(
+        &self,
+        caller: NodeId,
+        target: NodeId,
+        text: &str,
+        append: bool,
+    ) -> Result<String, PeerError> {
+        let Some(ws) = self.workspace_of(caller) else {
+            return Err(PeerError::NotConnected);
+        };
+        if !ws.are_connected(caller, target) {
+            return Err(PeerError::NotConnected);
+        }
+        let Ok(node) = ws.node(target) else {
+            return Err(PeerError::NotConnected);
+        };
+        // Escrita so em nota: terminal e frame nao tem arquivo para receber texto.
+        let NodeKind::Markdown { file_path, .. } = &node.kind else {
+            return Err(PeerError::NotReadable {
+                kind: node.kind.tag().to_string(),
+            });
+        };
+
+        let raiz = self.workflow_root(ws.id);
+        let caminho =
+            crate::state::resolve_in(&raiz, file_path).map_err(|e| PeerError::WriteFailed {
+                reason: e.to_string(),
+            })?;
+
+        let escrita = if append {
+            escrever_no_fim(&caminho, text)
+        } else {
+            std::fs::write(&caminho, text)
+        };
+        escrita.map_err(|e| PeerError::WriteFailed {
+            reason: e.to_string(),
+        })?;
+
+        // A nota aberta no canvas recarrega sozinha; sem isto o texto so apareceria na
+        // proxima montagem do no e a escrita pareceria ter falhado.
+        let caminho_rel = file_path.display().to_string();
+        if let Err(erro) = self.app.emit("note://changed", &caminho_rel) {
+            tracing::warn!(%erro, "falha ao avisar o front sobre a nota");
+        }
+        Ok(caminho_rel)
+    }
+}
+
+/// Acrescenta ao fim da nota, separando do que ja existe por uma linha em branco.
+fn escrever_no_fim(caminho: &std::path::Path, texto: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let vazio = std::fs::metadata(caminho)
+        .map(|m| m.len() == 0)
+        .unwrap_or(true);
+    let mut arquivo = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(caminho)?;
+    if vazio {
+        writeln!(arquivo, "{texto}")
+    } else {
+        writeln!(arquivo, "\n{texto}")
+    }
 }
 
 /// URL que um agente usa para falar com o servidor MCP. A identidade dele vai no path:
@@ -219,6 +289,7 @@ pub fn agent_url(port: u16, node_id: NodeId) -> String {
 /// Porta efemera (`:0`): evita conflito quando ha outra instancia aberta — o mesmo
 /// problema que ja nos mordeu com o Vite.
 pub fn start(
+    app: AppHandle,
     repo: WorkspaceRepository,
     ptys: Arc<PtyRegistry>,
     bus: Arc<AgentBus>,
@@ -230,7 +301,7 @@ pub fn start(
 
     std::thread::spawn(move || {
         for mut request in server.incoming_requests() {
-            let resposta = tratar(&mut request, &repo, &ptys, &bus, &log, &default_dir);
+            let resposta = tratar(&mut request, &app, &repo, &ptys, &bus, &log, &default_dir);
             let header = Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
                 .expect("header valido");
             let _ = request.respond(Response::from_string(resposta).with_header(header));
@@ -242,6 +313,7 @@ pub fn start(
 
 fn tratar(
     request: &mut tiny_http::Request,
+    app: &AppHandle,
     repo: &WorkspaceRepository,
     ptys: &Arc<PtyRegistry>,
     bus: &AgentBus,
@@ -268,6 +340,7 @@ fn tratar(
         repo: repo.clone(),
         ptys: Arc::clone(ptys),
         default_dir: default_dir.to_path_buf(),
+        app: app.clone(),
     };
 
     // Notificacao (sem id) -> corpo vazio, status implicito 200.
@@ -309,5 +382,23 @@ mod tests {
             agent_url(7331, id),
             format!("http://127.0.0.1:7331/mcp/{id}")
         );
+    }
+
+    #[test]
+    fn append_separa_do_que_ja_estava_na_nota() {
+        let caminho = std::env::temp_dir().join(format!("orkai-nota-{}.md", NodeId::new_v4()));
+
+        // Nota nova: sem linha em branco sobrando no comeco do arquivo.
+        escrever_no_fim(&caminho, "# Plano").unwrap();
+        assert_eq!(std::fs::read_to_string(&caminho).unwrap(), "# Plano\n");
+
+        // Segundo agente escrevendo: um bloco markdown novo, nao uma linha grudada.
+        escrever_no_fim(&caminho, "## Decisao").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&caminho).unwrap(),
+            "# Plano\n\n## Decisao\n"
+        );
+
+        std::fs::remove_file(&caminho).ok();
     }
 }

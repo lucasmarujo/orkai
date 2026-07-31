@@ -7,4 +7,4 @@ mod error;
 mod repository;
 
 pub use error::{Result, StorageError};
-pub use repository::{WorkflowSummary, WorkspaceRepository};
+pub use repository::{SearchDoc, SearchHit, WorkflowSummary, WorkspaceRepository};

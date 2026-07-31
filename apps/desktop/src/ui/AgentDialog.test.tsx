@@ -3,10 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentDialog } from './AgentDialog';
 
-// A checagem do PATH vai ao backend; nos testes o Tauri não existe.
+// A checagem do PATH e o worktree vão ao backend; nos testes o Tauri não existe.
 const commandAvailable = vi.fn(async (_command: string) => true);
+const gitWorkflowIsRepo = vi.fn(async () => false);
+const gitWorktreeCreate = vi.fn(async (_name: string) => 'C:/dados/worktrees/claude-code-qa');
 vi.mock('../ipc/commands', () => ({
   commandAvailable: (command: string) => commandAvailable(command),
+  gitWorkflowIsRepo: () => gitWorkflowIsRepo(),
+  gitWorktreeCreate: (name: string) => gitWorktreeCreate(name),
 }));
 
 const estadoFake = { custom: [], load: vi.fn(async () => undefined) };
@@ -25,6 +29,8 @@ describe('AgentDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     commandAvailable.mockResolvedValue(true);
+    gitWorkflowIsRepo.mockResolvedValue(false);
+    gitWorktreeCreate.mockResolvedValue('C:/dados/worktrees/claude-code-qa');
   });
 
   it('cria o agente quando o CLI do provider está no PATH', async () => {
@@ -64,6 +70,42 @@ describe('AgentDialog', () => {
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'claude' } });
     await waitFor(() => expect(botaoCriar().disabled).toBe(false));
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('não oferece isolamento fora de um repositório git', async () => {
+    abrir();
+
+    await waitFor(() => expect(gitWorkflowIsRepo).toHaveBeenCalled());
+    expect(screen.queryByRole('checkbox')).toBeNull();
+  });
+
+  it('cria o worktree antes do nó e usa a pasta dele como cwd', async () => {
+    gitWorkflowIsRepo.mockResolvedValue(true);
+    const onCreate = abrir();
+
+    const isolar = await screen.findByRole('checkbox');
+    fireEvent.click(isolar);
+    fireEvent.click(botaoCriar());
+
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1));
+    expect(gitWorktreeCreate).toHaveBeenCalledWith('Claude Code · Architect');
+    expect(onCreate.mock.calls[0]![0]).toMatchObject({
+      cwd: 'C:/dados/worktrees/claude-code-qa',
+    });
+  });
+
+  it('não cria o nó quando o git recusa o worktree', async () => {
+    // Sem isto sobraria um agente apontando para uma pasta que nunca existiu.
+    gitWorkflowIsRepo.mockResolvedValue(true);
+    gitWorktreeCreate.mockRejectedValue(new Error('o repositorio ainda nao tem commits'));
+    const onCreate = abrir();
+
+    fireEvent.click(await screen.findByRole('checkbox'));
+    fireEvent.click(botaoCriar());
+
+    const aviso = await screen.findByRole('alert');
+    expect(aviso.textContent).toContain('nao tem commits');
+    expect(onCreate).not.toHaveBeenCalled();
   });
 
   it('não bloqueia quando a própria checagem falha', async () => {

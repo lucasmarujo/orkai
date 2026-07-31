@@ -7,6 +7,8 @@
   --accent: #4c8dff;
   --text: #dfe3ea;
   --text-dim: #8b93a3;
+  /* Agente parado numa pergunta. Âmbar por ser a única cor de "aja agora" do app. */
+  --atencao: #e0a33c;
 
   color-scheme: dark;
   font-family: 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
@@ -22,6 +24,7 @@
   --accent: #2f6fe0;
   --text: #1a1d22;
   --text-dim: #66707c;
+  --atencao: #b26a00;
 
   color-scheme: light;
 }
@@ -431,13 +434,28 @@ body.is-resizing {
   border-radius: 50%;
 }
 
-.agent-panel__dot.is-on {
+/* Camada de atenção: uma cor por estado, a mesma no painel e no anel do nó. */
+.agent-panel__dot.is-running {
   background: #16c60c;
   box-shadow: 0 0 6px #16c60c;
 }
 
-.agent-panel__dot.is-off {
+.agent-panel__dot.is-waiting {
+  background: var(--atencao);
+  box-shadow: 0 0 8px var(--atencao);
+}
+
+.agent-panel__dot.is-idle {
+  background: #6b7a8f;
+}
+
+.agent-panel__dot.is-exited,
+.agent-panel__dot.is-none {
   background: var(--text-dim);
+}
+
+.agent-panel__item.is-waiting .agent-panel__meta {
+  color: var(--atencao);
 }
 
 .agent-panel__nome {
@@ -627,6 +645,14 @@ body.is-resizing {
 .minimap__node--frame {
   background: transparent;
   border: 1px solid #4a4f5c;
+}
+
+.minimap__node--git {
+  background: #d4a04c;
+}
+
+.minimap__node--fileTree {
+  background: #7fb069;
 }
 
 .minimap__camera {
@@ -898,6 +924,75 @@ body.is-resizing {
   min-height: 0;
 }
 
+/* Agente parado numa pergunta: a faixa de role acende e o nó ganha um anel. */
+.agent-host--waiting {
+  box-shadow: inset 0 0 0 2px var(--atencao);
+}
+
+.agent-host--waiting .agent-host__role {
+  background: var(--atencao);
+  color: #2a1c00;
+}
+
+.agent-host__atencao {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #2a1c00;
+  color: var(--atencao);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Worktree do agente: branch, diff e as duas decisões possíveis. */
+.agent-panel__wt {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.agent-panel__wt code {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  color: var(--accent);
+}
+
+.agent-panel__diff {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-panel__wt button {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.agent-panel__wt button:hover {
+  border-color: var(--accent);
+}
+
+.agent-panel__aviso {
+  margin: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+
 /* Painel: caixa de entrada e log MCP (debugger visual). */
 .agent-panel__inbox {
   margin-left: 6px;
@@ -1027,6 +1122,23 @@ body.is-resizing {
 .dialog__actions button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Isolamento em worktree: checkbox com explicação embaixo. */
+.dialog__check {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.dialog__check small {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-dim);
+  line-height: 1.4;
 }
 
 /* CLI do provider ausente no PATH. */
@@ -1166,4 +1278,343 @@ body.is-resizing {
 .markdown-preview--leitura:empty::after {
   content: 'Clique duplo para editar';
   color: var(--text-dim);
+}
+
+/* ---------------- GitNode (M6) */
+
+.git-node {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.git-node--vazio {
+  padding: 14px;
+}
+
+.git-node__topo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-alt);
+}
+
+.git-node__branch {
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  color: var(--text);
+}
+
+.git-node__sujo {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgb(224 163 60 / 18%);
+  color: var(--atencao);
+}
+
+.git-node__acoes {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.git-node__aviso {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--atencao);
+}
+
+.git-node__corpo {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.git-node__arquivos {
+  flex: 0 0 40%;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  list-style: none;
+}
+
+.git-node__arquivos button {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.git-node__arquivos button:hover {
+  background: var(--surface-alt);
+}
+
+.git-node__arquivos button.is-active {
+  background: rgb(76 141 255 / 16%);
+}
+
+.git-node__status {
+  flex: 0 0 12px;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  text-align: center;
+}
+
+.git-node__status--m {
+  color: var(--atencao);
+}
+
+.git-node__status--a,
+.git-node__status--novo {
+  color: #7fb069;
+}
+
+.git-node__status--d {
+  color: #e06c75;
+}
+
+.git-node__caminho {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.git-node__contagem,
+.git-node__limpo,
+.git-node__dica {
+  color: var(--text-dim);
+}
+
+.git-node__limpo,
+.git-node__dica {
+  display: block;
+  padding: 8px 10px;
+}
+
+.git-node__diff {
+  flex: 1;
+  margin: 0;
+  padding: 6px 0;
+  overflow: auto;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  line-height: 1.45;
+}
+
+.diff__linha {
+  display: block;
+  padding: 0 10px;
+  white-space: pre;
+}
+
+.diff__linha--add {
+  background: rgb(127 176 105 / 14%);
+  color: #9ecb7f;
+}
+
+.diff__linha--del {
+  background: rgb(224 108 117 / 14%);
+  color: #e08c94;
+}
+
+.diff__linha--hunk {
+  color: var(--accent);
+}
+
+.diff__linha--meta {
+  color: var(--text-dim);
+}
+
+/* ---------------- FileTreeNode (M6) */
+
+.filetree {
+  height: 100%;
+  overflow: auto;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.filetree__aviso {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--atencao);
+}
+
+.filetree__lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filetree__item {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  width: 100%;
+  padding: 2px 6px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filetree__item:hover {
+  background: var(--surface-alt);
+}
+
+.filetree__icone {
+  flex: 0 0 10px;
+  color: var(--text-dim);
+}
+
+/* ---------------- Command palette (M6) */
+
+/* Acima do .dialog-backdrop (1000): o Ctrl+K vale mesmo com um diálogo aberto. */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1010;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 12vh;
+  background: rgb(0 0 0 / 45%);
+}
+
+.palette {
+  display: flex;
+  flex-direction: column;
+  width: min(620px, 90vw);
+  max-height: 60vh;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 55%);
+}
+
+.palette__input {
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  outline: none;
+}
+
+.palette__lista {
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.palette__vazio {
+  padding: 12px 14px;
+  color: var(--text-dim);
+}
+
+.palette__item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 7px 14px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette__item.is-active {
+  background: rgb(76 141 255 / 16%);
+}
+
+.palette__item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.palette__tipo {
+  flex: 0 0 58px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.palette__tipo--acao {
+  color: var(--accent);
+}
+
+.palette__titulo {
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette__detalhe {
+  flex: 1 1 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------- Revisões de prompt (M6) */
+
+.roles__revisoes-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.roles__revisoes {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.roles__revisoes li {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.roles__revisao-quando {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+.roles__revisao-texto {
+  flex: 1;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

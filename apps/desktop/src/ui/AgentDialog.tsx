@@ -28,6 +28,10 @@ export function AgentDialog({ defaultCwd, onCancel, onCreate }: Props) {
   const [cwd, setCwd] = useState(defaultCwd);
   // `undefined` enquanto a checagem não voltou: não acusa ausência antes de saber.
   const [instalado, setInstalado] = useState<boolean | undefined>(undefined);
+  const [repoGit, setRepoGit] = useState(false);
+  const [isolar, setIsolar] = useState(false);
+  const [criando, setCriando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   const provider = PROVIDERS.find((p) => p.id === providerId)!;
 
@@ -54,9 +58,34 @@ export function AgentDialog({ defaultCwd, onCancel, onCreate }: Props) {
     };
   }, [provider.command]);
 
-  const criar = () => {
+  // Isolamento só é oferecido em pasta versionada: sem repositório não há worktree.
+  useEffect(() => {
+    void api
+      .gitWorkflowIsRepo()
+      .then(setRepoGit)
+      .catch(() => setRepoGit(false));
+  }, []);
+
+  const criar = async () => {
     const role = roles.find((r) => r.id === roleId) ?? roles[0]!;
-    onCreate(buildAgentKind(provider, role, cwd.trim() || defaultCwd));
+    const kind = buildAgentKind(provider, role, cwd.trim() || defaultCwd);
+    if (!isolar) {
+      onCreate(kind);
+      return;
+    }
+
+    // O worktree nasce antes do nó: se o git recusar, nada é criado e o erro aparece
+    // no diálogo, em vez de um agente apontando para uma pasta que não existe.
+    setCriando(true);
+    setErro(null);
+    try {
+      const pasta = await api.gitWorktreeCreate(kind.name);
+      onCreate({ ...kind, cwd: pasta });
+    } catch (e) {
+      setErro(String(e));
+    } finally {
+      setCriando(false);
+    }
   };
 
   return (
@@ -96,12 +125,36 @@ export function AgentDialog({ defaultCwd, onCancel, onCreate }: Props) {
           <span>Pasta de trabalho</span>
           <input
             type="text"
-            value={cwd}
+            value={isolar ? 'worktree próprio (criado ao confirmar)' : cwd}
             spellCheck={false}
+            disabled={isolar}
             onChange={(e) => setCwd(e.target.value)}
             placeholder={defaultCwd}
           />
         </label>
+
+        {repoGit && (
+          <label className="dialog__check">
+            <input
+              type="checkbox"
+              checked={isolar}
+              onChange={(e) => setIsolar(e.target.checked)}
+            />
+            <span>
+              Isolar em worktree git
+              <small>
+                O agente trabalha numa branch e numa pasta próprias. Você integra ou
+                descarta pelo painel.
+              </small>
+            </span>
+          </label>
+        )}
+
+        {erro && (
+          <p className="dialog__aviso" role="alert">
+            {erro}
+          </p>
+        )}
 
         <div className="dialog__actions">
           <button type="button" onClick={onCancel}>
@@ -110,10 +163,10 @@ export function AgentDialog({ defaultCwd, onCancel, onCreate }: Props) {
           <button
             type="button"
             className="dialog__primary"
-            disabled={instalado === false}
-            onClick={criar}
+            disabled={instalado === false || criando}
+            onClick={() => void criar()}
           >
-            Criar agente
+            {criando ? 'Criando worktree…' : 'Criar agente'}
           </button>
         </div>
       </div>

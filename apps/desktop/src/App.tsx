@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 
+import { useAttention } from './agents/useAttention';
 import { Canvas } from './canvas/Canvas';
 import { checkForUpdate } from './ipc/updater';
 import { useWorkspaceStore } from './stores/workspaceStore';
 import { AgentPanel } from './ui/AgentPanel';
+import { CommandPalette } from './ui/CommandPalette';
 import { Toolbar } from './ui/Toolbar';
 import { useTheme } from './ui/theme';
 import { WorkflowSidebar } from './ui/WorkflowSidebar';
@@ -11,8 +13,10 @@ import { WorkflowSidebar } from './ui/WorkflowSidebar';
 export function App() {
   const { load, flush, loading, error, nodes } = useWorkspaceStore();
   const [mostrarPainel, setMostrarPainel] = useState(false);
+  const [mostrarPalette, setMostrarPalette] = useState(false);
   const [sidebarRecolhida, setSidebarRecolhida] = useState(false);
   const { theme, toggle: alternarTema } = useTheme();
+  useAttention();
 
   useEffect(() => {
     void load();
@@ -47,10 +51,17 @@ export function App() {
           onToggle={() => setSidebarRecolhida((v) => !v)}
         />
         <div className="app__canvas">
-          {loading ? <p className="app__status">Carregando workspace…</p> : <Canvas />}
+          {loading ? (
+            <p className="app__status">Carregando workspace…</p>
+          ) : (
+            <Canvas onPalette={() => setMostrarPalette(true)} />
+          )}
           {mostrarPainel && <AgentPanel nodes={nodes} onClose={() => setMostrarPainel(false)} />}
         </div>
       </div>
+      {mostrarPalette && (
+        <CommandPalette onClose={() => setMostrarPalette(false)} onToggleTheme={alternarTema} />
+      )}
       {error && (
         <p className="app__erro" role="alert">
           {error}

@@ -22,6 +22,22 @@ pub struct WorkflowSummary {
     pub root_path: String,
 }
 
+/// Documento a indexar: um arquivo de texto do workflow.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchDoc {
+    /// Caminho relativo a raiz do workflow — e o que o front usa para abrir o arquivo.
+    pub path: String,
+    pub body: String,
+}
+
+/// Resultado de busca, com o trecho ja recortado pelo FTS5.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHit {
+    pub path: String,
+    pub snippet: String,
+}
+
 /// `Clone` e barato: `SqlitePool` e um handle com `Arc` interno. A tarefa de
 /// persistencia de output fica com sua propria copia.
 #[derive(Clone)]
@@ -350,6 +366,63 @@ impl WorkspaceRepository {
             .execute(&self.pool)
             .await?;
         Ok(())
+    }
+
+    /// Substitui o indice de busca do workflow e devolve quantos documentos entraram.
+    ///
+    /// Unica escrita do repositorio em transacao: apagar e repovoar sao meia operacao
+    /// cada. Um indice esvaziado e nao repovoado nao acha nada, o que e pior do que um
+    /// indice velho — e todo o resto do banco sobrevive a linha ruim por outros meios.
+    pub async fn reindex(&self, workspace_id: Uuid, docs: &[SearchDoc]) -> Result<usize> {
+        let workspace = workspace_id.to_string();
+        let mut tx = self.pool.begin().await?;
+
+        sqlx::query("DELETE FROM search WHERE workspace_id = ?")
+            .bind(&workspace)
+            .execute(&mut *tx)
+            .await?;
+
+        for doc in docs {
+            sqlx::query("INSERT INTO search (path, body, workspace_id) VALUES (?, ?, ?)")
+                .bind(&doc.path)
+                .bind(&doc.body)
+                .bind(&workspace)
+                .execute(&mut *tx)
+                .await?;
+        }
+
+        tx.commit().await?;
+        Ok(docs.len())
+    }
+
+    /// Busca no indice do workflow. `fts_query` ja precisa vir escapado para a
+    /// linguagem do FTS5 — quem chama usa `indexer::fts_query`.
+    pub async fn search(
+        &self,
+        workspace_id: Uuid,
+        fts_query: &str,
+        limit: i64,
+    ) -> Result<Vec<SearchHit>> {
+        // Delimitadores em colchetes, nao tags HTML: o front renderiza o trecho como
+        // texto, entao conteudo de arquivo nunca vira markup.
+        let rows = sqlx::query(
+            "SELECT path, snippet(search, 1, '[', ']', '…', 12) AS trecho \
+             FROM search WHERE workspace_id = ? AND search MATCH ? \
+             ORDER BY bm25(search) LIMIT ?",
+        )
+        .bind(workspace_id.to_string())
+        .bind(fts_query)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| SearchHit {
+                path: row.get("path"),
+                snippet: row.get("trecho"),
+            })
+            .collect())
     }
 }
 
@@ -684,5 +757,108 @@ mod tests {
             .map(|n| n.kind.tag())
             .collect();
         assert!(tags.contains(&"terminal") && tags.contains(&"markdown"));
+    }
+
+    fn doc(path: &str, body: &str) -> SearchDoc {
+        SearchDoc {
+            path: path.into(),
+            body: body.into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn busca_acha_o_documento_e_recorta_o_trecho() {
+        let repo = WorkspaceRepository::in_memory().await.unwrap();
+        let ws = repo.load_or_create("Orkai").await.unwrap();
+        repo.reindex(
+            ws.id,
+            &[doc("notas/plano.md", "o carregador de sessao vive aqui")],
+        )
+        .await
+        .unwrap();
+
+        let achados = repo.search(ws.id, "\"carregador\"", 10).await.unwrap();
+        assert_eq!(achados.len(), 1);
+        assert_eq!(achados[0].path, "notas/plano.md");
+        assert!(achados[0].snippet.contains("[carregador]"));
+    }
+
+    #[tokio::test]
+    async fn busca_ignora_acento_dos_dois_lados() {
+        let repo = WorkspaceRepository::in_memory().await.unwrap();
+        let ws = repo.load_or_create("Orkai").await.unwrap();
+        repo.reindex(ws.id, &[doc("nota.md", "a sessão de manutenção")])
+            .await
+            .unwrap();
+
+        // Sem `remove_diacritics 2` no tokenizer, nenhuma das duas formas acharia a outra.
+        assert_eq!(repo.search(ws.id, "\"sessao\"", 10).await.unwrap().len(), 1);
+        assert_eq!(
+            repo.search(ws.id, "\"manutenção\"", 10)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn busca_acha_pelo_nome_do_arquivo() {
+        let repo = WorkspaceRepository::in_memory().await.unwrap();
+        let ws = repo.load_or_create("Orkai").await.unwrap();
+        repo.reindex(ws.id, &[doc("notas/arquitetura.md", "corpo qualquer")])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            repo.search(ws.id, "\"arquitetura\"", 10)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn reindexar_substitui_em_vez_de_acumular() {
+        let repo = WorkspaceRepository::in_memory().await.unwrap();
+        let ws = repo.load_or_create("Orkai").await.unwrap();
+        let docs = [doc("nota.md", "conteudo repetido")];
+
+        repo.reindex(ws.id, &docs).await.unwrap();
+        repo.reindex(ws.id, &docs).await.unwrap();
+        assert_eq!(
+            repo.search(ws.id, "\"repetido\"", 10).await.unwrap().len(),
+            1
+        );
+
+        // Reindexar vazio limpa: arquivo apagado no disco some da busca.
+        assert_eq!(repo.reindex(ws.id, &[]).await.unwrap(), 0);
+        assert!(repo
+            .search(ws.id, "\"repetido\"", 10)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn busca_nao_vaza_documento_de_outro_workflow() {
+        let repo = WorkspaceRepository::in_memory().await.unwrap();
+        let a = repo.create_workflow("A", "C:/dev/a").await.unwrap();
+        let b = repo.create_workflow("B", "C:/dev/b").await.unwrap();
+
+        repo.reindex(a.id, &[doc("segredo.md", "palavra exclusiva")])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            repo.search(a.id, "\"exclusiva\"", 10).await.unwrap().len(),
+            1
+        );
+        assert!(repo
+            .search(b.id, "\"exclusiva\"", 10)
+            .await
+            .unwrap()
+            .is_empty());
     }
 }

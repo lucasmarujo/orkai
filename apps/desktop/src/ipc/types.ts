@@ -34,7 +34,10 @@ export type NodeKind =
       args: string[];
       cwd: string;
       systemPrompt: string;
-    };
+    }
+  // Sem campos: de qual repositório o nó fala sai da conexão com um agente.
+  | { type: 'git' }
+  | { type: 'fileTree'; root: string };
 
 export type NodeKindTag = NodeKind['type'];
 

@@ -64,7 +64,7 @@ Clean architecture sim, mas sem `IWorkspaceRepositoryFactory`. Cada crate expõe
 | DB | `sqlx` (SQLite, migrations versionadas) | |
 | FS watch | `notify` | |
 | Serialização | `serde` + `serde_json` | |
-| Busca | `tantivy` | só a partir do M5 |
+| Busca | SQLite FTS5 (via `sqlx`) | M6 trocou `tantivy` por FTS5 — ver a nota do milestone |
 | Markdown | `unified`/`remark` no front | render live |
 | Erros | `thiserror` (libs) + `anyhow` (app) | |
 | Logs | `tracing` + `tracing-subscriber` (JSON em arquivo) | |
@@ -103,7 +103,7 @@ orkai/
 └─ README.md
 ```
 
-`/plugins`, `/sdk`, `/examples`, `/tools` só são criados quando houver o primeiro conteúdo real (M6). Diretório vazio é dívida.
+`/plugins`, `/sdk`, `/examples`, `/tools` só são criados quando houver o primeiro conteúdo real (M7). Diretório vazio é dívida.
 
 **Tipos compartilhados:** `ts-rs` gera os `.ts` a partir dos structs Rust (`cargo test` regenera). Elimina a classe inteira de bugs de contrato Rust↔TS. Sem duplicação manual de interface.
 
@@ -133,16 +133,30 @@ Seleção múltipla, snap/grid, guias de alinhamento, grupos/frames, undo/redo (
 ### M4 — Grafo e colaboração entre agentes (≈ 3 semanas)
 Conexões com semântica (Agent→Agent, Git→Agent). Passagem de contexto entre nós. Modo Maestro (1 orquestrador, N workers). Debugger visual de agente (prompt/resposta/tool call).
 
-### M5 — Conhecimento e busca (≈ 2 semanas)
-Tantivy indexando arquivos, notas, logs, histórico. `Ctrl+K` global. Biblioteca de prompts versionada. `FileTreeNode`, `GitNode`, `DiffNode`.
+### M5 — Paralelismo sem babá *(entregue)*
+Trocado com o M6 depois do M4: com dois agentes o app já era usável, com cinco o custo virava vigiar terminal e desatar conflito de arquivo. Busca não resolve nenhum dos dois.
 
-### M6 — Plugins (≈ 4 semanas)
+- **Camada de atenção** (`src-tauri/attention.rs`): heurística sobre a saída do PTY classifica cada agente em *trabalhando / precisa de você / ocioso / encerrado*. Detecta no Rust porque o nó virtualizado não tem front escutando — e é justamente o agente fora da tela que precisa avisar. Anel no nó, fila ordenada por urgência no painel, notificação nativa na transição.
+- **Worktree git por agente** (`src-tauri/git.rs`): cada agente ganha branch e pasta próprias (`orkai/<slug>`, fora do repositório), com `+N/−M` no painel e integrar/descartar pela UI. A base do diff mora no `git config orkai.base` do worktree — sem campo novo no `NodeKind`, sem migração.
+- **`orkai_note`**: quinta tool MCP, escreve numa nota conectada (append por padrão). O artefato do agente deixa de morrer no scrollback e vira nó no canvas, que o humano edita e os vizinhos leem. A nota aberta recarrega via evento `note://changed`.
+
+### M6 — Conhecimento e busca *(entregue)*
+Com cinco agentes trabalhando em paralelo (M5), o material que eles produzem passou a sumir: uma nota de três dias atrás só era alcançável se o nó ainda estivesse visível, e o `+42/−7` do worktree não dizia *o que* mudou. O M6 fecha isso — achar pelo teclado, ver o trabalho como arquivo e diff no canvas, reaproveitar prompts.
+
+- **Busca em SQLite FTS5, não tantivy** (`migrations/0004_search.sql`, `src-tauri/indexer.rs`). O corpus é a pasta de um workflow e o SQLite já estava aqui; tantivy custaria uma dependência pesada sobre `lto = true`, um bump do `rust-version` e um segundo estado para divergir do banco. `remove_diacritics 2` no tokenizer é o que faz "sessao" achar "sessão". A entrada do usuário passa por `fts_query`, que escapa os operadores do `MATCH` — fronteira de confiança, não conveniência. Teto: sem fuzzy/typo-tolerance; tantivy segue como upgrade path.
+- **Índice reconstruído quando o palette abre**, não por watcher (`notify`): um walk mais uma transação — a primeira do repositório, porque apagar e repovoar são meia operação cada.
+- **`Ctrl+K`** (`ui/CommandPalette.tsx`): nós, arquivos, ações e prompts. Nós, ações e prompts são filtrados no front — já estão em memória, e indexá-los seria manter índice para o que um `Array.filter` resolve. Só conteúdo de arquivo vai ao FTS5. O atalho entra antes da guarda `digitando` do `useKeyboard` e o xterm devolve a tecla via `attachCustomKeyEventHandler`: o caso comum é o foco estar num terminal, e é aí que ele mais vale.
+- **`GitNode` com diff embutido + `FileTreeNode`**, dois nós em vez de três. Um `DiffNode` separado duplicaria estado de sincronização com o `GitNode`. O `GitNode` não guarda pasta: de qual repositório ele fala sai da conexão — ligado a um agente mostra o worktree dele e habilita integrar/descartar, solto mostra a raiz do workflow. `status_files` une `status --porcelain` e `diff --numstat`, pagando o débito registrado em `git.rs` (arquivo novo não rastreado, que era justamente o trabalho do agente que não aparecia). `NodeKind` novo não pediu migration: `kind_data` é JSON.
+- **Biblioteca de prompts** (`stores/promptsStore.ts`): blob JSON em `app_setting`, mesmo contrato das roles. Versionamento é uma pilha de revisões dentro do próprio prompt, com teto de 20 — o histórico inteiro vive numa linha.
+- **Fora do corpus:** scrollback dos agentes. Indexar transcript de PTY é ruído com ANSI; entra quando alguém pedir.
+
+### M7 — Plugins (≈ 4 semanas)
 SDK TypeScript primeiro (WebView já executa JS — é o caminho mais curto). Manifest + modelo de permissões (fs/rede explícitos). Instalação via URL do GitHub. Rust/Python SDK depois, se houver demanda real.
 
-### M7+ — Backlog priorizado por demanda
+### M8+ — Backlog priorizado por demanda
 Docker, SSH, browser automation, MCP inspector, automações/cron, voz/Whisper/OCR, colaboração P2P, marketplace, Linux/macOS.
 
-> **Nota de escopo:** o documento de visão lista marketplace, voz, OCR, mobile companion e colaboração P2P. Nenhum deles entra antes do M7. São multiplicadores de valor sobre um núcleo que ainda não existe.
+> **Nota de escopo:** o documento de visão lista marketplace, voz, OCR, mobile companion e colaboração P2P. Nenhum deles entra antes do M8. São multiplicadores de valor sobre um núcleo que ainda não existe.
 
 ---
 
@@ -208,7 +222,7 @@ Docker, SSH, browser automation, MCP inspector, automações/cron, voz/Whisper/O
 | Performance com muitos terminais | Virtualização desde o M1; buffer no Rust, `xterm.js` desmontado fora da tela |
 | WebGL2 não segurar 1000+ nós | Benchmark ao fim do M2; wgpu nativo é o upgrade path documentado |
 | Divergência de estado Rust↔React | `ts-rs` gera os tipos; Rust é a fonte da verdade |
-| Escopo do documento de visão | Roadmap por milestone; nada do M7+ antes do núcleo |
+| Escopo do documento de visão | Roadmap por milestone; nada do M8+ antes do núcleo |
 | OneDrive no path do projeto | Sincronização pode travar `target/` — configurar exclusão ou mover o repo |
 
 ---

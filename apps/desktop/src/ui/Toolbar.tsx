@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { screenCenterWorld } from '../canvas/viewport';
 import * as api from '../ipc/commands';
 import type { NodeKind } from '../ipc/types';
-import { useWorkspaceStore } from '../stores/workspaceStore';
+import { DEFAULT_NODE_SIZE, useWorkspaceStore } from '../stores/workspaceStore';
 import { AgentDialog } from './AgentDialog';
 
 /** Cria nos no centro da area visivel, com um deslocamento por no ja existente. */
@@ -59,6 +59,16 @@ export function Toolbar({ theme, onToggleTheme, onTogglePanel }: ToolbarProps) {
     await createNode({ type: 'frame', title: 'Novo grupo' }, posicaoParaNovoNo(900, 640));
   }, [createNode, posicaoParaNovoNo]);
 
+  const novoGit = useCallback(async () => {
+    const { width, height } = DEFAULT_NODE_SIZE.git;
+    await createNode({ type: 'git' }, posicaoParaNovoNo(width, height));
+  }, [createNode, posicaoParaNovoNo]);
+
+  const novaArvore = useCallback(async () => {
+    const { width, height } = DEFAULT_NODE_SIZE.fileTree;
+    await createNode({ type: 'fileTree', root: '' }, posicaoParaNovoNo(width, height));
+  }, [createNode, posicaoParaNovoNo]);
+
   const criarAgente = useCallback(
     (kind: Extract<NodeKind, { type: 'agent' }>) => {
       setMostrarAgente(false);
@@ -79,6 +89,12 @@ export function Toolbar({ theme, onToggleTheme, onTogglePanel }: ToolbarProps) {
       </button>
       <button type="button" onClick={() => void novoFrame()}>
         + Grupo
+      </button>
+      <button type="button" onClick={() => void novoGit()}>
+        + Git
+      </button>
+      <button type="button" onClick={() => void novaArvore()}>
+        + Arquivos
       </button>
       <button type="button" className="toolbar__agente" onClick={() => setMostrarAgente(true)}>
         + Agente

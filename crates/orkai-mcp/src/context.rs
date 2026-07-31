@@ -31,6 +31,8 @@ pub enum PeerError {
     NotConnected,
     /// Ha aresta, mas o no nao tem conteudo legivel (frame, ou terminal sem sessao viva).
     NotReadable { kind: String },
+    /// Ha aresta e o no aceita escrita, mas o disco recusou.
+    WriteFailed { reason: String },
 }
 
 /// Visao que o servidor MCP tem do mundo, do ponto de vista de um agente.
@@ -48,6 +50,20 @@ pub trait McpContext: Send + Sync {
 
     /// Conteudo de um vizinho. A ACL e checada aqui dentro, nao pelo chamador.
     fn peer_content(&self, caller: NodeId, target: NodeId) -> Result<PeerContent, PeerError>;
+
+    /// Escreve numa nota vizinha e devolve o caminho do arquivo.
+    ///
+    /// Contrapartida do `peer_content`: com a leitura sozinha o agente so consome o que
+    /// o humano escreveu; com a escrita a nota vira memoria compartilhada visivel no
+    /// canvas — o artefato deixa de morrer no scrollback do terminal. `append` e o modo
+    /// natural (varios agentes acumulando), `false` sobrescreve o arquivo inteiro.
+    fn write_note(
+        &self,
+        caller: NodeId,
+        target: NodeId,
+        text: &str,
+        append: bool,
+    ) -> Result<String, PeerError>;
 
     /// Resolve um id a partir do que o agente digitou: aceita o UUID ou o nome do peer.
     /// So resolve entre os peers do chamador — nao da para mirar quem nao e vizinho.

@@ -5,7 +5,7 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 import { boundingBox } from './selection';
 
 /** Atalhos globais do canvas. Teclado-primeiro, como pede o documento de visao. */
-export function useKeyboard(screen: { width: number; height: number }) {
+export function useKeyboard(screen: { width: number; height: number }, onPalette?: () => void) {
   useEffect(() => {
     const aoTeclar = (evento: KeyboardEvent) => {
       // Nao sequestrar teclas de quem esta digitando num terminal ou editor.
@@ -18,6 +18,14 @@ export function useKeyboard(screen: { width: number; height: number }) {
 
       const store = useWorkspaceStore.getState();
       const ctrl = evento.ctrlKey || evento.metaKey;
+
+      // Antes da guarda de digitacao: o caso comum e o foco estar num terminal, e e
+      // exatamente ai que achar um no do outro lado do canvas mais vale a pena.
+      if (ctrl && evento.key.toLowerCase() === 'k') {
+        evento.preventDefault();
+        onPalette?.();
+        return;
+      }
 
       // Undo/redo valem mesmo com foco no editor de nota: e o gesto esperado.
       if (ctrl && evento.key.toLowerCase() === 'z' && !digitando) {
@@ -64,7 +72,7 @@ export function useKeyboard(screen: { width: number; height: number }) {
 
     window.addEventListener('keydown', aoTeclar);
     return () => window.removeEventListener('keydown', aoTeclar);
-  }, [screen]);
+  }, [onPalette, screen]);
 }
 
 /** Viewport que cabe todos os nos com uma folga de 10%. */

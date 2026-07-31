@@ -2,7 +2,9 @@ import type { ComponentType } from 'react';
 
 import type { CanvasNode, NodeKind } from '../ipc/types';
 import { AgentNode } from './AgentNode';
+import { FileTreeNode } from './FileTreeNode';
 import { FrameNode } from './FrameNode';
+import { GitNode } from './GitNode';
 import { MarkdownNode } from './MarkdownNode';
 import { TerminalNode } from './TerminalNode';
 
@@ -33,5 +35,14 @@ export const nodeRegistry: Record<NodeKind['type'], NodeDefinition> = {
   agent: {
     component: AgentNode,
     title: (node) => (node.kind.type === 'agent' ? node.kind.name : 'Agente'),
+  },
+  git: {
+    component: GitNode,
+    title: () => 'Git',
+  },
+  fileTree: {
+    component: FileTreeNode,
+    title: (node) =>
+      node.kind.type === 'fileTree' && node.kind.root ? node.kind.root : 'Arquivos',
   },
 };

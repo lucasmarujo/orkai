@@ -83,6 +83,12 @@ export function usePtySession(nodeId: string, hooks: PtyHooks = {}) {
     term.loadAddon(fit);
     term.open(host);
 
+    // Ctrl+K e do palette, nao do shell: sem isto o xterm mandaria 0x0B junto para o
+    // PTY, e abrir a busca apagaria a linha que estava sendo digitada.
+    term.attachCustomKeyEventHandler(
+      (evento) => !((evento.ctrlKey || evento.metaKey) && evento.key.toLowerCase() === 'k'),
+    );
+
     try {
       term.loadAddon(new WebglAddon());
     } catch {

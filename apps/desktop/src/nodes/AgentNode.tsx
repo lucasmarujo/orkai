@@ -32,11 +32,17 @@ export function AgentNode({ node }: { node: CanvasNode }) {
 
   const hostRef = usePtySession(node.id, hooks);
   const pendentes = useAgentActivity((s) => s.pending[node.id] ?? 0);
+  const atencao = useAgentActivity((s) => s.attention[node.id]);
 
   return (
-    <div className="agent-host">
+    <div className={`agent-host agent-host--${atencao ?? 'none'}`}>
       <span className="agent-host__role">
         {role}
+        {atencao === 'waiting' && (
+          <span className="agent-host__atencao" title="Parado numa pergunta: precisa de você">
+            precisa de você
+          </span>
+        )}
         {pendentes > 0 && (
           <span className="agent-host__badge" title={`${pendentes} mensagem(ns) na caixa`}>
             {pendentes}

@@ -1,12 +1,15 @@
+import { ask } from '@tauri-apps/plugin-dialog';
 import { useEffect, useState } from 'react';
 
+import { porUrgencia, rotuloAtencao } from '../agents/attention';
 import { screenCenterWorld } from '../canvas/viewport';
 import * as api from '../ipc/commands';
-import type { McpCall } from '../ipc/commands';
+import type { AgentWorktree, McpCall } from '../ipc/commands';
 import type { CanvasNode, NodeKind } from '../ipc/types';
 import { useAgentActivity } from '../stores/agentActivityStore';
 import { DEFAULT_NODE_SIZE, useWorkspaceStore } from '../stores/workspaceStore';
 import { AgentDialog } from './AgentDialog';
+import { PromptLibrary } from './PromptLibrary';
 import { RoleManager } from './RoleManager';
 import { useResizable } from './useResizable';
 
@@ -23,6 +26,12 @@ function duracao(desde: number, agora: number): string {
 const POLL_MS = 2000;
 
 /**
+ * Cadência do status de git. Mais lenta que o resto de propósito: cada volta dispara um
+ * punhado de processos `git`, e diff de worktree não muda de segundo em segundo.
+ */
+const GIT_POLL_MS = 6000;
+
+/**
  * Painel de agentes: status/turnos, caixa de entrada e o log de chamadas MCP — o
  * debugger visual ("veja cada tool call"). Faz polling do backend a cada 2s.
  */
@@ -34,8 +43,11 @@ export function AgentPanel({ nodes, onClose }: { nodes: CanvasNode[]; onClose: (
   const viewport = useWorkspaceStore((s) => s.viewport);
   const [agora, setAgora] = useState(Date.now());
   const [chamadas, setChamadas] = useState<McpCall[]>([]);
-  const [aba, setAba] = useState<'agentes' | 'roles'>('agentes');
+  const [aba, setAba] = useState<'agentes' | 'roles' | 'prompts'>('agentes');
   const [mostrarDialog, setMostrarDialog] = useState(false);
+  const atencao = useAgentActivity((s) => s.attention);
+  const [worktrees, setWorktrees] = useState<Record<string, AgentWorktree>>({});
+  const [avisoGit, setAvisoGit] = useState<string | null>(null);
   const { width, onResizeStart } = useResizable('orkai.agentPanel.width', 280, 'right');
 
   const criarAgente = (kind: Extract<NodeKind, { type: 'agent' }>) => {
@@ -72,7 +84,63 @@ export function AgentPanel({ nodes, onClose }: { nodes: CanvasNode[]; onClose: (
     };
   }, [nodes, setPending]);
 
-  const agentes = nodes.filter((n) => n.kind.type === 'agent');
+  // Worktrees em cadência própria. Só enquanto o painel está aberto: é a única tela
+  // que mostra esse status, e cada volta custa processos `git`.
+  useEffect(() => {
+    let vivo = true;
+    const tick = async () => {
+      try {
+        const lista = await api.gitAgentsStatus();
+        if (vivo) setWorktrees(Object.fromEntries(lista.map((w) => [w.nodeId, w])));
+      } catch {
+        // Pasta sem git ou repositório em rebase: nada a mostrar nesta volta.
+      }
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), GIT_POLL_MS);
+    return () => {
+      vivo = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  const integrar = async (id: string) => {
+    setAvisoGit(null);
+    try {
+      const saida = await api.gitWorktreeMerge(id);
+      setAvisoGit(saida.split('\n')[0] || 'Branch integrada.');
+    } catch (e) {
+      setAvisoGit(String(e));
+    }
+  };
+
+  const descartar = async (id: string, nome: string) => {
+    const confirmado = await ask(
+      `Apagar a branch e a pasta de trabalho de ${nome}? O que não foi integrado se perde.`,
+      { title: 'Descartar trabalho', kind: 'warning' },
+    );
+    if (!confirmado) return;
+
+    setAvisoGit(null);
+    try {
+      await api.gitWorktreeDiscard(id);
+      // ponytail: o nó do agente continua no canvas e volta a apontar para a pasta do
+      // workflow no próximo spawn (o backend já cai para a raiz quando o cwd sumiu).
+      // Apagar o nó junto seria decidir pelo usuário que a conversa também morreu.
+      setWorktrees((atual) => {
+        const resto = { ...atual };
+        delete resto[id];
+        return resto;
+      });
+      setAvisoGit(`Trabalho de ${nome} descartado.`);
+    } catch (e) {
+      setAvisoGit(String(e));
+    }
+  };
+
+  const agentes = nodes
+    .filter((n) => n.kind.type === 'agent')
+    .sort((a, b) => porUrgencia(atencao[a.id], atencao[b.id]));
   const nomeDe = (id: string) => {
     const n = agentes.find((a) => a.id === id);
     return n && n.kind.type === 'agent' ? n.kind.name : id.slice(0, 8);
@@ -112,10 +180,20 @@ export function AgentPanel({ nodes, onClose }: { nodes: CanvasNode[]; onClose: (
         >
           Roles
         </button>
+        <button
+          type="button"
+          role="tab"
+          className={aba === 'prompts' ? 'is-active' : ''}
+          onClick={() => setAba('prompts')}
+        >
+          Prompts
+        </button>
       </div>
 
       {aba === 'roles' ? (
         <RoleManager />
+      ) : aba === 'prompts' ? (
+        <PromptLibrary />
       ) : (
         <>
           <button
@@ -133,28 +211,54 @@ export function AgentPanel({ nodes, onClose }: { nodes: CanvasNode[]; onClose: (
               {agentes.map((node) => {
                 const nome = node.kind.type === 'agent' ? node.kind.name : 'Agente';
                 const atividade = byId[node.id];
-                const rodando = atividade?.status === 'running';
+                const estado = atencao[node.id];
                 const pendentes = pending[node.id] ?? 0;
+                const worktree = worktrees[node.id];
                 return (
-                  <li key={node.id} className="agent-panel__item">
-                    <span className={`agent-panel__dot ${rodando ? 'is-on' : 'is-off'}`} />
+                  <li key={node.id} className={`agent-panel__item is-${estado ?? 'none'}`}>
+                    <span className={`agent-panel__dot is-${estado ?? 'none'}`} />
                     <span className="agent-panel__nome">
                       {nome}
                       {pendentes > 0 && <span className="agent-panel__inbox">{pendentes}</span>}
                     </span>
                     <span className="agent-panel__meta">
-                      {atividade
-                        ? `${atividade.turns} turno(s) · ${
-                            rodando
-                              ? duracao(atividade.startedAt, agora)
-                              : `saiu (${atividade.exitCode})`
-                          }`
-                        : 'inativo'}
+                      {rotuloAtencao(estado)}
+                      {atividade &&
+                        ` · ${atividade.turns} turno(s) · ${duracao(atividade.startedAt, agora)}`}
                     </span>
+
+                    {worktree && (
+                      <div className="agent-panel__wt">
+                        <code title={worktree.branch}>{worktree.branch}</code>
+                        <span
+                          className="agent-panel__diff"
+                          title={
+                            worktree.dirty
+                              ? 'Há mudança não commitada: integrar só leva o que está commitado'
+                              : 'Tudo commitado'
+                          }
+                        >
+                          +{worktree.added}/−{worktree.removed}
+                          {worktree.dirty && ' •'}
+                        </span>
+                        <button type="button" onClick={() => void integrar(node.id)}>
+                          Integrar
+                        </button>
+                        <button type="button" onClick={() => void descartar(node.id, nome)}>
+                          Descartar
+                        </button>
+                      </div>
+                    )}
                   </li>
                 );
               })}
             </ul>
+          )}
+
+          {avisoGit && (
+            <p className="agent-panel__aviso" role="status">
+              {avisoGit}
+            </p>
           )}
 
           <div className="agent-panel__debug">

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { AttentionStatus } from '../ipc/commands';
+
 /**
  * Atividade dos agentes, por nó.
  *
@@ -22,18 +24,28 @@ interface ActivityState {
   byId: Record<string, AgentActivity>;
   /** Mensagens pendentes por nó, vindas do backend (polling no painel). */
   pending: Record<string, number>;
+  /**
+   * Estado de atenção por nó, vindo do backend. Separado de `byId` de propósito: aquilo
+   * é o que o front observou do nó montado, isto é o que o Rust vê de todos os agentes,
+   * inclusive os virtualizados — que são justamente os que precisam avisar.
+   */
+  attention: Record<string, AttentionStatus>;
   register: (id: string) => void;
   markTurn: (id: string) => void;
   markExit: (id: string, code: number) => void;
   setPending: (pending: Record<string, number>) => void;
+  setAttention: (attention: Record<string, AttentionStatus>) => void;
   unregister: (id: string) => void;
 }
 
 export const useAgentActivity = create<ActivityState>((set) => ({
   byId: {},
   pending: {},
+  attention: {},
 
   setPending: (pending) => set({ pending }),
+
+  setAttention: (attention) => set({ attention }),
 
   register: (id) =>
     set((estado) => {

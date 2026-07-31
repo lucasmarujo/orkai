@@ -42,6 +42,15 @@ pub enum NodeKind {
         cwd: PathBuf,
         system_prompt: String,
     },
+    /// Status e diff de um repositorio git.
+    ///
+    /// Sem campo de proposito: de qual pasta ele fala sai da conexao — ligado a um
+    /// agente mostra o worktree daquele agente, solto mostra a raiz do workflow.
+    /// Guardar a pasta aqui duplicaria o que a aresta ja diz, e as duas divergiriam.
+    Git {},
+    /// Arvore de arquivos do workflow. `root` e relativo a raiz, vazio = a propria raiz.
+    #[serde(rename_all = "camelCase")]
+    FileTree { root: PathBuf },
 }
 
 impl NodeKind {
@@ -52,18 +61,22 @@ impl NodeKind {
             Self::Markdown { .. } => "markdown",
             Self::Frame { .. } => "frame",
             Self::Agent { .. } => "agent",
+            Self::Git {} => "git",
+            Self::FileTree { .. } => "fileTree",
         }
     }
 
     /// Como iniciar o processo deste no, quando ele tem um: `(comando, args, cwd)`.
-    /// Terminal e Agent sao spawnaveis; Markdown e Frame nao.
+    /// So Terminal e Agent sao spawnaveis; os demais sao visualizacao.
     pub fn spawn_spec(&self) -> Option<(&str, &[String], &std::path::Path)> {
         match self {
             Self::Terminal { cwd, shell } => Some((shell, &[], cwd)),
             Self::Agent {
                 command, args, cwd, ..
             } => Some((command, args, cwd)),
-            Self::Markdown { .. } | Self::Frame { .. } => None,
+            Self::Markdown { .. } | Self::Frame { .. } | Self::Git {} | Self::FileTree { .. } => {
+                None
+            }
         }
     }
 }
@@ -151,9 +164,16 @@ mod tests {
                 cwd: PathBuf::from("C:/dev"),
                 system_prompt: "Voce e um arquiteto.".into(),
             },
+            NodeKind::Git {},
+            NodeKind::FileTree {
+                root: PathBuf::from("src"),
+            },
         ] {
             let json = serde_json::to_value(&kind).unwrap();
             assert_eq!(json["type"], kind.tag());
+            // Round-trip junto: e este par que trava o contrato com o `NodeKind`
+            // escrito a mao em `apps/desktop/src/ipc/types.ts`.
+            assert_eq!(serde_json::from_value::<NodeKind>(json).unwrap(), kind);
         }
     }
 

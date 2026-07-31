@@ -1,3 +1,4 @@
+import { listen } from '@tauri-apps/api/event';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -52,6 +53,23 @@ export function MarkdownNode({ node }: { node: CanvasNode }) {
       vivo = false;
     };
   }, [filePath]);
+
+  // Um agente conectado pode escrever aqui (tool `orkai_note`). Recarrega quando isso
+  // acontece — menos enquanto o humano edita: sobrescrever o que ele está digitando é
+  // pior do que mostrar o texto do agente um pouco depois.
+  useEffect(() => {
+    if (editando) return;
+    const inscricao = listen<string>('note://changed', (evento) => {
+      if (evento.payload !== filePath) return;
+      api
+        .fileRead(filePath)
+        .then(setConteudo)
+        .catch((e) => setErro(String(e)));
+    });
+    return () => {
+      void inscricao.then((cancelar) => cancelar());
+    };
+  }, [editando, filePath]);
 
   useEffect(() => {
     if (editando) textareaRef.current?.focus();

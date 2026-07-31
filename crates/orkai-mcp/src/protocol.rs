@@ -82,6 +82,7 @@ fn handle_tool_call(
         "orkai_inbox" => Ok(tool_text(inbox(caller, bus))),
         "orkai_send" => send(caller, &args, ctx, bus, clock).map(tool_text),
         "orkai_read_peer_output" => read_peer_output(caller, &args, ctx).map(tool_text),
+        "orkai_note" => write_note(caller, &args, ctx).map(tool_text),
         outro => Err(RpcError::invalid_params(&format!(
             "ferramenta desconhecida: {outro}"
         ))),
@@ -174,6 +175,44 @@ fn read_peer_output(
         Err(PeerError::NotReadable { kind }) => Err(RpcError::invalid_params(&format!(
             "o no e do tipo '{kind}' e nao tem conteudo legivel"
         ))),
+        // Leitura nao escreve; so existe para o match ficar exaustivo.
+        Err(PeerError::WriteFailed { reason }) => Err(RpcError::internal(&reason)),
+    }
+}
+
+fn write_note(caller: NodeId, args: &Value, ctx: &dyn McpContext) -> Result<String, RpcError> {
+    let alvo = args.get("note").and_then(Value::as_str).unwrap_or_default();
+    let texto = args.get("text").and_then(Value::as_str).unwrap_or_default();
+    if texto.is_empty() {
+        return Err(RpcError::invalid_params("texto vazio"));
+    }
+    // Append e o padrao: sobrescrever a nota do humano por engano e o pior erro possivel
+    // aqui, entao destruir conteudo exige o agente pedir explicitamente.
+    let append = match args.get("mode").and_then(Value::as_str).unwrap_or("append") {
+        "append" => true,
+        "replace" => false,
+        outro => {
+            return Err(RpcError::invalid_params(&format!(
+                "mode invalido: {outro} (use 'append' ou 'replace')"
+            )))
+        }
+    };
+
+    let destino = ctx
+        .resolve_peer(caller, alvo)
+        .ok_or_else(|| RpcError::invalid_params(&format!("nota nao encontrada: {alvo}")))?;
+
+    match ctx.write_note(caller, destino, texto, append) {
+        Ok(caminho) => Ok(format!("Nota {caminho} atualizada.")),
+        Err(PeerError::NotConnected) => Err(RpcError::forbidden(
+            "sem aresta com essa nota: ligue os nos no canvas primeiro",
+        )),
+        Err(PeerError::NotReadable { kind }) => Err(RpcError::invalid_params(&format!(
+            "o no e do tipo '{kind}': orkai_note so escreve em notas markdown"
+        ))),
+        Err(PeerError::WriteFailed { reason }) => Err(RpcError::internal(&format!(
+            "falha ao gravar a nota: {reason}"
+        ))),
     }
 }
 
@@ -215,6 +254,23 @@ fn tool_definitions() -> Value {
                 },
                 "required": ["peer"]
             }
+        },
+        {
+            "name": "orkai_note",
+            "description": "Escreve numa nota markdown conectada a voce: plano, spec, decisao ou resultado. A nota fica visivel no canvas e outros agentes conectados a ela podem ler. Use para deixar o artefato registrado em vez de so responder no terminal.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "note": { "type": "string", "description": "Nome ou id da nota conectada" },
+                    "text": { "type": "string", "description": "O markdown a gravar" },
+                    "mode": {
+                        "type": "string",
+                        "enum": ["append", "replace"],
+                        "description": "append (padrao) acrescenta ao fim; replace troca a nota inteira"
+                    }
+                },
+                "required": ["note", "text"]
+            }
         }
     ])
 }
@@ -248,6 +304,12 @@ impl RpcError {
     fn forbidden(msg: &str) -> Self {
         Self {
             code: -32000,
+            message: msg.into(),
+        }
+    }
+    fn internal(msg: &str) -> Self {
+        Self {
+            code: -32603,
             message: msg.into(),
         }
     }
@@ -291,6 +353,22 @@ mod tests {
                 .ok_or(PeerError::NotReadable {
                     kind: "frame".into(),
                 })
+        }
+        fn write_note(
+            &self,
+            caller: NodeId,
+            target: NodeId,
+            _text: &str,
+            append: bool,
+        ) -> Result<String, PeerError> {
+            match self.peer_content(caller, target)? {
+                // O fake devolve o modo junto do caminho: e o unico jeito de o teste do
+                // protocolo afirmar qual modo foi repassado sem dar estado mutavel a ele.
+                PeerContent::Note { path, .. } => Ok(format!("{path} (append={append})")),
+                PeerContent::Terminal(_) => Err(PeerError::NotReadable {
+                    kind: "terminal".into(),
+                }),
+            }
         }
     }
 
@@ -337,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn tools_list_traz_as_quatro_ferramentas() {
+    fn tools_list_traz_todas_as_ferramentas() {
         let (ctx, bus) = (
             FakeCtx {
                 peers: vec![],
@@ -353,9 +431,138 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().unwrap())
             .collect();
-        assert_eq!(nomes.len(), 4);
+        assert_eq!(nomes.len(), 5);
         assert!(nomes.contains(&"orkai_send"));
         assert!(nomes.contains(&"orkai_read_peer_output"));
+        assert!(nomes.contains(&"orkai_note"));
+    }
+
+    /// Contexto com um agente `a` ligado a uma nota.
+    fn ctx_com_nota(a: NodeId, nota: NodeId) -> FakeCtx {
+        FakeCtx {
+            peers: vec![(
+                a,
+                Peer {
+                    id: nota,
+                    name: "Plano".into(),
+                },
+            )],
+            conteudos: vec![(
+                nota,
+                PeerContent::Note {
+                    path: "plano.md".into(),
+                    text: "# Plano".into(),
+                },
+            )],
+        }
+    }
+
+    #[test]
+    fn note_escreve_em_nota_conectada_em_modo_append() {
+        let (a, nota) = (NodeId::new_v4(), NodeId::new_v4());
+        let ctx = ctx_com_nota(a, nota);
+        let bus = AgentBus::new();
+
+        let resp = call(
+            a,
+            "orkai_note",
+            json!({ "note": "Plano", "text": "## Decisao" }),
+            &ctx,
+            &bus,
+        );
+        assert!(texto(&resp).contains("plano.md (append=true)"), "{resp}");
+    }
+
+    #[test]
+    fn note_aceita_replace_e_recusa_modo_desconhecido() {
+        let (a, nota) = (NodeId::new_v4(), NodeId::new_v4());
+        let ctx = ctx_com_nota(a, nota);
+        let bus = AgentBus::new();
+
+        let resp = call(
+            a,
+            "orkai_note",
+            json!({ "note": "Plano", "text": "x", "mode": "replace" }),
+            &ctx,
+            &bus,
+        );
+        assert!(texto(&resp).contains("append=false"), "{resp}");
+
+        let resp = call(
+            a,
+            "orkai_note",
+            json!({ "note": "Plano", "text": "x", "mode": "anexar" }),
+            &ctx,
+            &bus,
+        );
+        assert_eq!(resp["error"]["code"], -32602);
+    }
+
+    #[test]
+    fn note_sem_aresta_nao_encontra_a_nota() {
+        let (a, nota) = (NodeId::new_v4(), NodeId::new_v4());
+        // Nota existe no mundo, mas nao e peer de `a`: sem aresta, nao existe para ele.
+        let ctx = FakeCtx {
+            peers: vec![],
+            conteudos: vec![(
+                nota,
+                PeerContent::Note {
+                    path: "plano.md".into(),
+                    text: String::new(),
+                },
+            )],
+        };
+        let resp = call(
+            a,
+            "orkai_note",
+            json!({ "note": nota.to_string(), "text": "x" }),
+            &ctx,
+            &AgentBus::new(),
+        );
+        assert_eq!(resp["error"]["code"], -32602);
+    }
+
+    #[test]
+    fn note_recusa_no_que_nao_e_nota() {
+        let (a, term) = (NodeId::new_v4(), NodeId::new_v4());
+        let ctx = FakeCtx {
+            peers: vec![(
+                a,
+                Peer {
+                    id: term,
+                    name: "Terminal".into(),
+                },
+            )],
+            conteudos: vec![(term, PeerContent::Terminal("saida".into()))],
+        };
+        let resp = call(
+            a,
+            "orkai_note",
+            json!({ "note": "Terminal", "text": "x" }),
+            &ctx,
+            &AgentBus::new(),
+        );
+        assert!(
+            resp["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("so escreve em notas markdown"),
+            "{resp}"
+        );
+    }
+
+    #[test]
+    fn note_recusa_texto_vazio() {
+        let (a, nota) = (NodeId::new_v4(), NodeId::new_v4());
+        let ctx = ctx_com_nota(a, nota);
+        let resp = call(
+            a,
+            "orkai_note",
+            json!({ "note": "Plano", "text": "" }),
+            &ctx,
+            &AgentBus::new(),
+        );
+        assert_eq!(resp["error"]["code"], -32602);
     }
 
     #[test]

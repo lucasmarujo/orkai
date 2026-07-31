@@ -27,7 +27,7 @@ const WHEEL_SENSITIVITY = -0.0015;
 /** Abaixo disso o gesto conta como clique, nao como arrasto. */
 const CLIQUE_MAX_PX = 4;
 
-export function Canvas() {
+export function Canvas({ onPalette }: { onPalette?: () => void }) {
   const { nodes, connections, viewport, selectedIds, setViewport, setSelection, connect } =
     useWorkspaceStore();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,7 +37,7 @@ export function Canvas() {
   const [conexaoPendente, setConexaoPendente] = useState<{ from: Vec2; to: Vec2 } | null>(null);
   const [arestaSobCursor, setArestaSobCursor] = useState<string | null>(null);
 
-  useKeyboard(tela);
+  useKeyboard(tela, onPalette);
 
   useEffect(() => {
     const container = containerRef.current;

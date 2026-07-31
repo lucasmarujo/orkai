@@ -20,6 +20,8 @@ export const DEFAULT_NODE_SIZE: Record<NodeKind['type'], Size> = {
   markdown: { width: 480, height: 400 },
   frame: { width: 900, height: 640 },
   agent: { width: 680, height: 460 },
+  git: { width: 760, height: 520 },
+  fileTree: { width: 320, height: 480 },
 };
 
 interface WorkspaceState {

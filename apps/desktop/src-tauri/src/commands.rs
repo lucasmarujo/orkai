@@ -6,7 +6,7 @@ use orkai_core::{
     Command, Connection, ConnectionId, Node, NodeId, NodeKind, Size, Vec2, Viewport, Workspace,
 };
 use orkai_pty::{default_shell, PtyBackend, PtyEvent, PtySpec};
-use orkai_storage::WorkflowSummary;
+use orkai_storage::{SearchHit, WorkflowSummary};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -99,8 +99,9 @@ pub async fn node_delete(state: State<'_, AppState>, id: NodeId) -> Result<()> {
 
     // Ignora sessao inexistente: nem todo no e terminal.
     let _ = state.ptys.remove(id);
-    // Descarta mensagens pendentes para o no que se foi.
+    // Descarta mensagens pendentes e o estado de atencao do no que se foi.
     state.bus.forget(id);
+    state.attention.forget(id);
 
     // As arestas viram comandos proprios no mesmo grupo: o undo as recria na ordem
     // certa, depois do no voltar a existir.
@@ -267,6 +268,36 @@ pub async fn node_set_color(state: State<'_, AppState>, id: NodeId, color: Strin
     Ok(node)
 }
 
+// ---------------------------------------------------------------- busca (M6)
+
+/// Quantos resultados de arquivo o palette mostra. Passar disso e rolagem que
+/// ninguem le — quem nao achou nos 30 primeiros refina o termo.
+const BUSCA_LIMITE: i64 = 30;
+
+/// Reconstroi o indice do workflow ativo e devolve quantos arquivos entraram.
+///
+/// `async` pela mesma razao dos comandos de git: um walk da pasta do projeto na
+/// thread principal travaria a janela.
+#[tauri::command]
+pub async fn search_reindex(state: State<'_, AppState>) -> Result<usize> {
+    let root = state.active_root();
+    let docs = crate::indexer::coletar(&root);
+    Ok(state.repo.reindex(state.active_id(), &docs).await?)
+}
+
+#[tauri::command]
+pub async fn search_query(state: State<'_, AppState>, query: String) -> Result<Vec<SearchHit>> {
+    let fts = crate::indexer::fts_query(&query);
+    // Entrada sem nenhum termo utilizavel: `MATCH ''` e erro de sintaxe no FTS5.
+    if fts.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(state
+        .repo
+        .search(state.active_id(), &fts, BUSCA_LIMITE)
+        .await?)
+}
+
 // ---------------------------------------------------------------- roles
 
 /// Chave em `app_setting` das roles customizadas (JSON opaco para o backend).
@@ -286,6 +317,27 @@ pub async fn roles_load(state: State<'_, AppState>) -> Result<String> {
 #[tauri::command]
 pub async fn roles_save(state: State<'_, AppState>, json: String) -> Result<()> {
     state.repo.set_setting(CUSTOM_ROLES_KEY, &json).await?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- prompts (M6)
+
+/// Chave em `app_setting` da biblioteca de prompts. Mesmo contrato das roles: o
+/// backend guarda o blob, o formato (nome, texto, tags, revisoes) e do front.
+const PROMPT_LIBRARY_KEY: &str = "prompt_library";
+
+#[tauri::command]
+pub async fn prompts_load(state: State<'_, AppState>) -> Result<String> {
+    Ok(state
+        .repo
+        .get_setting(PROMPT_LIBRARY_KEY)
+        .await?
+        .unwrap_or_else(|| "[]".into()))
+}
+
+#[tauri::command]
+pub async fn prompts_save(state: State<'_, AppState>, json: String) -> Result<()> {
+    state.repo.set_setting(PROMPT_LIBRARY_KEY, &json).await?;
     Ok(())
 }
 
@@ -358,6 +410,194 @@ pub async fn connect_maestro(
     Ok(criadas.into_iter().map(|(conn, _)| conn).collect())
 }
 
+// ---------------------------------------------------------------- git
+
+/// Onde ficam os worktrees dos agentes: nos dados do app, fora do projeto do usuario.
+fn worktrees_dir(state: &AppState) -> PathBuf {
+    state.default_dir.join("worktrees")
+}
+
+/// A pasta do workflow ativo e um repositorio git? O dialogo de agente so oferece
+/// isolamento quando faz sentido.
+/// `async` de proposito: comando sincrono roda na thread principal, e chamar `git`
+/// travaria a janela. Vale para todos os comandos deste bloco.
+#[tauri::command]
+pub async fn git_workflow_is_repo(state: State<'_, AppState>) -> Result<bool> {
+    Ok(crate::git::is_repo(&state.active_root()))
+}
+
+/// Cria o worktree de um agente e devolve a pasta, para virar o `cwd` do no.
+#[tauri::command]
+pub async fn git_worktree_create(state: State<'_, AppState>, name: String) -> Result<String> {
+    let root = state.active_root();
+    let destino = crate::git::worktree_create(&root, &worktrees_dir(&state), &name)?;
+    Ok(destino.to_string_lossy().into_owned())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWorktree {
+    node_id: String,
+    #[serde(flatten)]
+    status: crate::git::WorktreeStatus,
+}
+
+/// Status do worktree de cada agente isolado do workflow ativo.
+///
+/// Um comando so para todos: o front pediria um por agente e cada chamada dispara
+/// processos `git`, entao o loop mora aqui.
+#[tauri::command]
+pub async fn git_agents_status(state: State<'_, AppState>) -> Result<Vec<AgentWorktree>> {
+    let workspace = state.load_active().await?;
+    Ok(workspace
+        .nodes
+        .iter()
+        .filter_map(|node| match &node.kind {
+            NodeKind::Agent { cwd, .. } => crate::git::status(cwd).map(|status| AgentWorktree {
+                node_id: node.id.to_string(),
+                status,
+            }),
+            _ => None,
+        })
+        .collect())
+}
+
+/// Integra a branch do agente no repositorio principal.
+#[tauri::command]
+pub async fn git_worktree_merge(state: State<'_, AppState>, node_id: NodeId) -> Result<String> {
+    let cwd = agent_cwd(&state, node_id).await?;
+    crate::git::merge(&cwd)
+}
+
+/// Descarta o trabalho do agente: mata o processo e apaga worktree e branch.
+///
+/// O processo morre antes porque no Windows a pasta em uso nao pode ser removida — e o
+/// `cwd` do agente e exatamente ela.
+#[tauri::command]
+pub async fn git_worktree_discard(state: State<'_, AppState>, node_id: NodeId) -> Result<()> {
+    let cwd = agent_cwd(&state, node_id).await?;
+    let _ = state.ptys.remove(node_id);
+    state.attention.forget(node_id);
+    crate::git::worktree_remove(&cwd)
+}
+
+async fn agent_cwd(state: &State<'_, AppState>, node_id: NodeId) -> Result<PathBuf> {
+    let workspace = state.load_active().await?;
+    match &workspace.node(node_id)?.kind {
+        NodeKind::Agent { cwd, .. } => Ok(cwd.clone()),
+        _ => Err(AppError::Internal("o no nao e um agente".into())),
+    }
+}
+
+/// Pasta de que um `GitNode` fala, e o agente dono dela quando houver.
+///
+/// A conexao e quem decide: ligado a um agente isolado, o no mostra o worktree
+/// daquele agente e habilita integrar/descartar; solto, mostra a raiz do workflow.
+/// Com mais de um agente vizinho vale o primeiro — o no e um so painel.
+async fn repo_do_no(
+    state: &State<'_, AppState>,
+    node_id: NodeId,
+) -> Result<(PathBuf, Option<NodeId>)> {
+    let workspace = state.load_active().await?;
+    let dono = workspace
+        .peers_of(node_id)
+        .into_iter()
+        .filter_map(|id| workspace.node(id).ok())
+        .find_map(|peer| match &peer.kind {
+            NodeKind::Agent { cwd, .. } => Some((cwd.clone(), peer.id)),
+            _ => None,
+        });
+
+    match dono {
+        Some((cwd, id)) => Ok((cwd, Some(id))),
+        None => Ok((state.active_root(), None)),
+    }
+}
+
+/// Status do repositorio que o `GitNode` observa, com o dono para as acoes.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitNodeStatus {
+    /// Id do agente dono do worktree, ou `None` se o no olha a raiz do workflow.
+    owner_id: Option<String>,
+    #[serde(flatten)]
+    files: crate::git::GitFiles,
+}
+
+#[tauri::command]
+pub async fn git_node_status(state: State<'_, AppState>, node_id: NodeId) -> Result<GitNodeStatus> {
+    let (dir, dono) = repo_do_no(&state, node_id).await?;
+    Ok(GitNodeStatus {
+        owner_id: dono.map(|id| id.to_string()),
+        files: crate::git::status_files(&dir)?,
+    })
+}
+
+#[tauri::command]
+pub async fn git_node_diff(
+    state: State<'_, AppState>,
+    node_id: NodeId,
+    path: String,
+) -> Result<String> {
+    let (dir, _) = repo_do_no(&state, node_id).await?;
+    // O caminho vem do front e vira argumento do `git`: valida antes contra `..`,
+    // caminho absoluto e prefixo de drive, como todo path que cruza a fronteira.
+    crate::state::resolve_in(&dir, &PathBuf::from(&path))?;
+    crate::git::file_diff(&dir, &path)
+}
+
+// ---------------------------------------------------------------- arvore de arquivos
+
+/// Uma entrada de pasta, do jeito que o `FileTreeNode` lista.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirEntry {
+    name: String,
+    /// Caminho relativo a raiz do workflow, sempre com `/`.
+    path: String,
+    is_dir: bool,
+}
+
+/// Conteudo de uma pasta do workflow, um nivel so.
+///
+/// Raso de proposito: a arvore carrega o que o usuario expande. Um walk recursivo
+/// pagaria o custo da pasta inteira para mostrar tres linhas.
+#[tauri::command]
+pub async fn dir_list(state: State<'_, AppState>, path: String) -> Result<Vec<DirEntry>> {
+    let root = state.active_root();
+    let dir = if path.is_empty() {
+        root.clone()
+    } else {
+        crate::state::resolve_in(&root, &PathBuf::from(&path))?
+    };
+
+    let mut entradas: Vec<DirEntry> = std::fs::read_dir(&dir)?
+        .flatten()
+        .filter_map(|entrada| {
+            let name = entrada.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                return None;
+            }
+            let is_dir = entrada.path().is_dir();
+            let filho = if path.is_empty() {
+                name.clone()
+            } else {
+                format!("{path}/{name}")
+            };
+            Some(DirEntry {
+                name,
+                path: filho,
+                is_dir,
+            })
+        })
+        .collect();
+
+    // Pastas antes de arquivos, cada grupo em ordem alfabetica: e o que todo
+    // explorador de arquivos faz, e o olho ja procura assim.
+    entradas.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
+    Ok(entradas)
+}
+
 // ---------------------------------------------------------------- pty
 
 #[tauri::command]
@@ -412,10 +652,16 @@ pub async fn pty_spawn(
         .with_args(args)
         .with_size(cols, rows)
         .with_seed(seed);
+    // So agente entra na camada de atencao: um terminal e do humano, ninguem precisa
+    // ser avisado de que ele parou num prompt.
+    let attention = eh_agente.then(|| std::sync::Arc::clone(&state.attention));
     let sessao = state.pty_backend.spawn(
         spec,
         std::sync::Arc::new(move |evento| match evento {
             PtyEvent::Data(bytes) => {
+                if let Some(attention) = &attention {
+                    attention.record_output(node_id, &bytes, crate::attention::agora_ms());
+                }
                 let payload = PtyDataEvent {
                     node_id: node_id.to_string(),
                     data: BASE64.encode(&bytes),
@@ -425,6 +671,9 @@ pub async fn pty_spawn(
                 }
             }
             PtyEvent::Exit { code } => {
+                if let Some(attention) = &attention {
+                    attention.record_exit(node_id, code, crate::attention::agora_ms());
+                }
                 let payload = PtyExitEvent {
                     node_id: node_id.to_string(),
                     code,
@@ -517,7 +766,15 @@ pub async fn pty_scrollback(state: State<'_, AppState>, node_id: NodeId) -> Resu
 #[tauri::command]
 pub async fn pty_kill(state: State<'_, AppState>, node_id: NodeId) -> Result<()> {
     let _ = state.ptys.remove(node_id);
+    state.attention.forget(node_id);
     Ok(())
+}
+
+/// Estado de atencao de cada agente com sessao viva. O front faz polling disto para
+/// pintar o anel do no e avisar quando alguem precisa de uma resposta.
+#[tauri::command]
+pub fn agent_attention(state: State<'_, AppState>) -> Vec<crate::attention::AgentAttention> {
+    state.attention.snapshot(crate::attention::agora_ms())
 }
 
 /// Shell padrao sugerido ao criar um terminal.

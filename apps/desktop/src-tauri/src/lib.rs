@@ -1,5 +1,8 @@
+mod attention;
 mod commands;
 mod error;
+mod git;
+mod indexer;
 mod mcp_server;
 mod state;
 
@@ -28,7 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
-            let state = tauri::async_runtime::block_on(init_state(data_dir))?;
+            let state = tauri::async_runtime::block_on(init_state(app.handle().clone(), data_dir))?;
             app.manage(state);
             Ok(())
         })
@@ -48,8 +51,21 @@ pub fn run() {
             commands::node_set_color,
             commands::roles_load,
             commands::roles_save,
+            commands::prompts_load,
+            commands::prompts_save,
+            commands::search_reindex,
+            commands::search_query,
             commands::agent_inboxes,
+            commands::agent_attention,
             commands::mcp_activity,
+            commands::git_workflow_is_repo,
+            commands::git_worktree_create,
+            commands::git_agents_status,
+            commands::git_worktree_merge,
+            commands::git_worktree_discard,
+            commands::git_node_status,
+            commands::git_node_diff,
+            commands::dir_list,
             commands::connect_maestro,
             commands::viewport_save,
             commands::file_read,
@@ -66,7 +82,7 @@ pub fn run() {
         .expect("falha ao iniciar o Orkai");
 }
 
-async fn init_state(data_dir: PathBuf) -> anyhow::Result<AppState> {
+async fn init_state(app: tauri::AppHandle, data_dir: PathBuf) -> anyhow::Result<AppState> {
     let workspace_dir = data_dir.join("workspace");
     std::fs::create_dir_all(&workspace_dir)?;
 
@@ -96,6 +112,7 @@ async fn init_state(data_dir: PathBuf) -> anyhow::Result<AppState> {
 
     // Servidor MCP: cada agente conecta na sua URL e ganha as tools de colaboracao.
     let mcp_port = mcp_server::start(
+        app,
         repo.clone(),
         Arc::clone(&ptys),
         Arc::clone(&bus),
@@ -114,5 +131,6 @@ async fn init_state(data_dir: PathBuf) -> anyhow::Result<AppState> {
         bus,
         mcp_port,
         mcp_log,
+        attention: Default::default(),
     })
 }
