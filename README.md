@@ -41,7 +41,7 @@ access.
 | | |
 |---|---|
 | **Infinite canvas** | Terminals, notes, and agents as draggable nodes. Zoom, marquee selection, groups, and alignment snapping. |
-| **Embedded MCP server** | Each agent gets tools to list peers, exchange messages, read the inbox, and view a neighbor's terminal. |
+| **Embedded MCP server** | Each agent gets tools to list peers, exchange messages, read the inbox, view a neighbor's terminal, and create, monitor or stop other agents. |
 | **Maestro mode** | Connects an orchestrator to multiple workers and lets you watch delegation happen. |
 | **Visual MCP debugger** | Every call between agents appears on screen — you can see the conversation, not just the result. |
 | **Project workflows** | Each workflow points to a folder. Switch context without killing processes that are already running. |

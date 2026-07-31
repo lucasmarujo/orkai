@@ -1,3 +1,4 @@
+import { listen } from '@tauri-apps/api/event';
 import { useEffect, useState } from 'react';
 
 import { useAttention } from './agents/useAttention';
@@ -20,6 +21,15 @@ export function App() {
 
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // Um agente pode criar outro agente pelo MCP (`orkai_spawn_agent`): o nó nasce no
+  // backend, sem passar pela store. Recarrega para ele aparecer no canvas na hora.
+  useEffect(() => {
+    const inscricao = listen('workspace://changed', () => void load());
+    return () => {
+      void inscricao.then((cancelar) => cancelar());
+    };
   }, [load]);
 
   // Sem await: estando atualizado a checagem não aparece, e o canvas não espera a rede.

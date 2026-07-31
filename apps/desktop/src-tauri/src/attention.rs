@@ -96,6 +96,18 @@ impl Attention {
         self.por_no.lock().expect("atencao envenenada").remove(&id);
     }
 
+    /// Status de um agente so, ou `None` se ele nunca produziu saida.
+    ///
+    /// Usado por quem decide sobre um agente especifico — a entrega automatica e o
+    /// supervisor consultando um vizinho — sem varrer o mapa inteiro.
+    pub fn state_of(&self, id: NodeId, agora: i64) -> Option<AgentStatus> {
+        self.por_no
+            .lock()
+            .expect("atencao envenenada")
+            .get(&id)
+            .map(|estado| status_de(estado, agora))
+    }
+
     /// Status de cada agente conhecido, resolvido no instante `agora`.
     pub fn snapshot(&self, agora: i64) -> Vec<AgentAttention> {
         let mapa = self.por_no.lock().expect("atencao envenenada");
@@ -266,6 +278,21 @@ mod tests {
             atencao.snapshot(2_000 + OCIOSO_APOS_MS * 2)[0].status,
             AgentStatus::Waiting
         );
+    }
+
+    #[test]
+    fn state_of_responde_por_um_agente_so() {
+        let atencao = Attention::default();
+        let id = NodeId::new_v4();
+        assert_eq!(atencao.state_of(id, 0), None, "nunca produziu saida");
+
+        atencao.record_output(id, b"compilando...", 1_000);
+        assert_eq!(atencao.state_of(id, 1_100), Some(AgentStatus::Running));
+        assert_eq!(
+            atencao.state_of(id, 1_000 + OCIOSO_APOS_MS),
+            Some(AgentStatus::Idle)
+        );
+        assert_eq!(atencao.state_of(NodeId::new_v4(), 1_100), None);
     }
 
     #[test]

@@ -4,6 +4,7 @@ mod error;
 mod git;
 mod indexer;
 mod mcp_server;
+mod relay;
 mod state;
 
 use std::path::PathBuf;
@@ -108,6 +109,7 @@ async fn init_state(app: tauri::AppHandle, data_dir: PathBuf) -> anyhow::Result<
 
     let ptys = Arc::new(orkai_pty::PtyRegistry::default());
     let bus = Arc::new(AgentBus::new());
+    let attention = Arc::new(attention::Attention::default());
     let mcp_log = mcp_server::McpLog::default();
 
     // Servidor MCP: cada agente conecta na sua URL e ganha as tools de colaboracao.
@@ -121,6 +123,9 @@ async fn init_state(app: tauri::AppHandle, data_dir: PathBuf) -> anyhow::Result<
     )?;
     tracing::info!(porta = mcp_port, "servidor MCP no ar");
 
+    // Entrega automatica: e o que faz o fluxo continuar sem o humano cutucar cada agente.
+    relay::start(Arc::clone(&bus), Arc::clone(&attention), Arc::clone(&ptys));
+
     Ok(AppState {
         repo,
         active: std::sync::Mutex::new(active),
@@ -131,6 +136,6 @@ async fn init_state(app: tauri::AppHandle, data_dir: PathBuf) -> anyhow::Result<
         bus,
         mcp_port,
         mcp_log,
-        attention: Default::default(),
+        attention,
     })
 }

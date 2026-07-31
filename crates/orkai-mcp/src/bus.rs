@@ -61,6 +61,18 @@ impl AgentBus {
             .map_or(0, Vec::len)
     }
 
+    /// Nos com mensagem parada na caixa. E o que a entrega automatica varre para saber
+    /// quem precisa ser avisado de que tem recado esperando.
+    pub fn pending_nodes(&self) -> Vec<NodeId> {
+        self.inboxes
+            .lock()
+            .expect("bus envenenado")
+            .iter()
+            .filter(|(_, caixa)| !caixa.is_empty())
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
     /// Descarta a caixa de um no removido, para nao vazar memoria.
     pub fn forget(&self, node: NodeId) {
         self.inboxes.lock().expect("bus envenenado").remove(&node);
@@ -125,6 +137,18 @@ mod tests {
         assert_eq!(recebidas.len(), MAX_INBOX);
         // As 10 primeiras cairam; a caixa comeca em "10".
         assert_eq!(recebidas[0].text, "10");
+    }
+
+    #[test]
+    fn pending_nodes_lista_so_quem_tem_recado_esperando() {
+        let bus = AgentBus::new();
+        let (a, b) = (NodeId::new_v4(), NodeId::new_v4());
+        bus.deliver(a, msg(b, "x"));
+
+        assert_eq!(bus.pending_nodes(), vec![a]);
+        // Ler esvazia: quem ja consumiu sai da varredura.
+        bus.drain(a);
+        assert!(bus.pending_nodes().is_empty());
     }
 
     #[test]

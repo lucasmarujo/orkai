@@ -10,5 +10,5 @@ mod context;
 mod protocol;
 
 pub use bus::{AgentBus, Message};
-pub use context::{McpContext, Peer, PeerContent, PeerError};
+pub use context::{McpContext, Peer, PeerContent, PeerError, PeerState, PeerStatus};
 pub use protocol::{handle_request, handle_request_with_clock};

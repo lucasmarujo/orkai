@@ -2,14 +2,19 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use orkai_core::{NodeId, NodeKind};
-use orkai_mcp::{handle_request, AgentBus, McpContext, Peer, PeerContent, PeerError};
+use orkai_core::{Command, Node, NodeId, NodeKind, Size, Vec2};
+use orkai_mcp::{
+    handle_request, AgentBus, McpContext, Peer, PeerContent, PeerError, PeerState, PeerStatus,
+};
 use orkai_pty::PtyRegistry;
 use orkai_storage::WorkspaceRepository;
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tiny_http::{Header, Method, Response, Server};
+
+use crate::attention::AgentStatus;
+use crate::state::AppState;
 
 /// Trecho final do scrollback exposto pelo `read_peer_output`, em bytes.
 const PEER_OUTPUT_TAIL: usize = 4096;
@@ -113,6 +118,57 @@ impl AppMcpContext {
     }
 }
 
+/// Tamanho do agente criado por outro agente. Espelha `DEFAULT_NODE_SIZE.agent` do
+/// front — e o mesmo no, so que nascido de uma tool em vez do dialogo.
+const AGENT_SIZE: (f32, f32) = (680.0, 460.0);
+
+/// Folga entre o criador e o agente criado, para as bordas nao se encostarem.
+const FOLGA: f32 = 40.0;
+
+/// Terminal inicial do agente criado por tool. O front reajusta no primeiro `fit`, mas
+/// o processo precisa de um tamanho valido para subir antes de qualquer no ser montado.
+const PTY_INICIAL: (u16, u16) = (120, 30);
+
+/// Teto de agentes ligados a um mesmo supervisor.
+///
+/// Cada agente e um processo de verdade. Um supervisor que entra em laco criando
+/// ajudantes derrubaria a maquina em segundos; com o teto ele recebe um erro que da para
+/// ler e decidir. Oito e mais do que qualquer orquestracao util precisa de uma vez.
+const MAX_FILHOS: usize = 8;
+
+/// Quantos agentes ja estao ligados a este no.
+fn agentes_ligados(ws: &orkai_core::Workspace, caller: NodeId) -> usize {
+    ws.peers_of(caller)
+        .into_iter()
+        .filter(|id| {
+            ws.node(*id)
+                .is_ok_and(|n| matches!(n.kind, NodeKind::Agent { .. }))
+        })
+        .count()
+}
+
+/// Onde o agente novo nasce: a direita do criador, empilhado por quem ja esta ligado a
+/// ele. Nao e layout perfeito — e o suficiente para nascer visivel e sem sobrepor o pai.
+fn posicao_do_filho(criador: &Node, ja_ligados: usize) -> Result<Vec2, PeerError> {
+    Vec2::new(
+        criador.position.x + criador.size.width + FOLGA,
+        criador.position.y + ja_ligados as f32 * (AGENT_SIZE.1 + FOLGA),
+    )
+    .map_err(|erro| PeerError::Failed {
+        reason: erro.to_string(),
+    })
+}
+
+/// Traduz o estado que a camada de atencao deduz para o vocabulario do MCP.
+fn estado_do_agente(status: AgentStatus) -> PeerState {
+    match status {
+        AgentStatus::Running => PeerState::Running,
+        AgentStatus::Waiting => PeerState::Waiting,
+        AgentStatus::Idle => PeerState::Idle,
+        AgentStatus::Exited => PeerState::Exited,
+    }
+}
+
 /// Nome legivel de um no, para o agente mirar por nome em vez de UUID.
 fn display_name(kind: &NodeKind) -> String {
     match kind {
@@ -210,6 +266,157 @@ impl McpContext for AppMcpContext {
                 kind: outro.tag().to_string(),
             }),
         }
+    }
+
+    fn peer_statuses(&self, caller: NodeId) -> Vec<PeerStatus> {
+        let Some(ws) = self.workspace_of(caller) else {
+            return Vec::new();
+        };
+        let agora = crate::attention::agora_ms();
+        let estado = self.app.try_state::<AppState>();
+
+        ws.peers_of(caller)
+            .into_iter()
+            .filter_map(|id| {
+                let node = ws.node(id).ok()?;
+                let state = estado
+                    .as_ref()
+                    .and_then(|app| app.attention.state_of(id, agora))
+                    .map_or(PeerState::Unknown, estado_do_agente);
+                Some(PeerStatus {
+                    peer: Peer {
+                        id,
+                        name: display_name(&node.kind),
+                    },
+                    kind: node.kind.tag().to_string(),
+                    state,
+                })
+            })
+            .collect()
+    }
+
+    fn spawn_agent(
+        &self,
+        caller: NodeId,
+        name: &str,
+        role: &str,
+        system_prompt: &str,
+    ) -> Result<Peer, PeerError> {
+        let Some(app) = self.app.try_state::<AppState>() else {
+            return Err(PeerError::Failed {
+                reason: "aplicacao ainda iniciando".into(),
+            });
+        };
+        let Some(mut ws) = self.workspace_of(caller) else {
+            return Err(PeerError::NotConnected);
+        };
+        let irmaos = agentes_ligados(&ws, caller);
+        if irmaos >= MAX_FILHOS {
+            return Err(PeerError::Failed {
+                reason: format!(
+                    "voce ja tem {MAX_FILHOS} agentes ligados: encerre um com orkai_stop_agent antes de criar outro"
+                ),
+            });
+        }
+
+        // So um agente cria agente: e do criador que o filho herda o CLI, e so um CLI
+        // cabeado no MCP consegue conversar de volta.
+        let (command, args, cwd, position) = {
+            let criador = ws.node(caller).map_err(|_| PeerError::NotConnected)?;
+            let NodeKind::Agent {
+                command, args, cwd, ..
+            } = &criador.kind
+            else {
+                return Err(PeerError::NotReadable {
+                    kind: criador.kind.tag().to_string(),
+                });
+            };
+            let position = posicao_do_filho(criador, irmaos)?;
+            (command.clone(), args.clone(), cwd.clone(), position)
+        };
+
+        let node = Node {
+            id: NodeId::new_v4(),
+            kind: NodeKind::Agent {
+                name: name.to_string(),
+                role: role.to_string(),
+                args: crate::commands::args_do_filho(&command, &args, system_prompt),
+                command,
+                cwd,
+                system_prompt: system_prompt.to_string(),
+            },
+            position,
+            size: Size::new(AGENT_SIZE.0, AGENT_SIZE.1).map_err(|erro| PeerError::Failed {
+                reason: erro.to_string(),
+            })?,
+            z_index: ws.next_z_index(),
+            created_at: agora_ms(),
+        };
+
+        let falhou = |erro: String| PeerError::Failed { reason: erro };
+        tauri::async_runtime::block_on(app.repo.save_node(ws.id, &node))
+            .map_err(|e| falhou(e.to_string()))?;
+
+        // A aresta com o criador nasce junto: e ela que autoriza os dois a conversarem.
+        ws.upsert_node(node.clone());
+        let connection = ws
+            .add_connection(caller, node.id)
+            .ok_or_else(|| falhou("o canvas recusou a aresta com o criador".into()))?;
+        let ligar = Command::CreateConnection { connection };
+        tauri::async_runtime::block_on(app.repo.apply(ws.id, &ligar))
+            .map_err(|e| falhou(e.to_string()))?;
+        // Um passo unico de undo desfaz o agente inteiro: aresta e no.
+        app.push_history(vec![Command::CreateNode { node: node.clone() }, ligar]);
+
+        let subiu = tauri::async_runtime::block_on(crate::commands::spawn_pty(
+            &self.app,
+            &app,
+            &ws,
+            node.id,
+            PTY_INICIAL.0,
+            PTY_INICIAL.1,
+        ));
+
+        // O canvas nao viu esta criacao passar por ele. Sem o aviso, o no so apareceria
+        // no proximo reload — inclusive quando o processo falhou e o usuario precisa ver.
+        if let Err(erro) = self.app.emit("workspace://changed", ()) {
+            tracing::warn!(%erro, "falha ao avisar o front sobre o agente criado");
+        }
+        subiu.map_err(|e| falhou(e.to_string()))?;
+
+        Ok(Peer {
+            id: node.id,
+            name: name.to_string(),
+        })
+    }
+
+    fn stop_agent(&self, caller: NodeId, target: NodeId) -> Result<(), PeerError> {
+        let Some(app) = self.app.try_state::<AppState>() else {
+            return Err(PeerError::Failed {
+                reason: "aplicacao ainda iniciando".into(),
+            });
+        };
+        let Some(ws) = self.workspace_of(caller) else {
+            return Err(PeerError::NotConnected);
+        };
+        if !ws.are_connected(caller, target) {
+            return Err(PeerError::NotConnected);
+        }
+        let Ok(node) = ws.node(target) else {
+            return Err(PeerError::NotConnected);
+        };
+        if !matches!(node.kind, NodeKind::Agent { .. }) {
+            return Err(PeerError::NotReadable {
+                kind: node.kind.tag().to_string(),
+            });
+        }
+
+        // Mesmo encerramento do `pty_kill`: mata o processo e tira o no da camada de
+        // atencao. O no e o transcript continuam no canvas.
+        let _ = app.ptys.remove(target);
+        app.attention.forget(target);
+        app.bus.forget(target);
+        Ok(())
     }
 
     fn write_note(
@@ -365,6 +572,65 @@ fn erro_json(msg: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn no(kind: NodeKind) -> Node {
+        Node {
+            id: NodeId::new_v4(),
+            kind,
+            position: Vec2::ZERO,
+            size: Size::new(100.0, 100.0).unwrap(),
+            z_index: 0,
+            created_at: 0,
+        }
+    }
+
+    fn agente() -> Node {
+        no(NodeKind::Agent {
+            name: "Worker".into(),
+            role: "QA".into(),
+            command: "claude".into(),
+            args: vec![],
+            cwd: std::path::PathBuf::from("C:/proj"),
+            system_prompt: String::new(),
+        })
+    }
+
+    #[test]
+    fn agentes_ligados_conta_so_agentes_vizinhos() {
+        let mut ws = orkai_core::Workspace::new("t");
+        let supervisor = agente();
+        let filho = agente();
+        let nota = no(NodeKind::Markdown {
+            file_path: std::path::PathBuf::from("plano.md"),
+            color: String::new(),
+        });
+        let solto = agente();
+        let (id_sup, id_filho, id_solto) = (supervisor.id, filho.id, solto.id);
+        for node in [supervisor, filho, nota.clone(), solto] {
+            ws.upsert_node(node);
+        }
+        ws.add_connection(id_sup, id_filho);
+        // Nota vizinha nao conta: o teto e de processo, nao de aresta.
+        ws.add_connection(id_sup, nota.id);
+
+        assert_eq!(agentes_ligados(&ws, id_sup), 1);
+        // Agente sem aresta com o supervisor nao entra na conta dele.
+        assert_eq!(agentes_ligados(&ws, id_solto), 0);
+    }
+
+    #[test]
+    fn o_filho_nasce_ao_lado_do_criador_sem_sobrepor_os_irmaos() {
+        let mut criador = agente();
+        criador.position = Vec2::new(100.0, 50.0).unwrap();
+        criador.size = Size::new(680.0, 460.0).unwrap();
+
+        let primeiro = posicao_do_filho(&criador, 0).unwrap();
+        assert_eq!((primeiro.x, primeiro.y), (100.0 + 680.0 + FOLGA, 50.0));
+
+        let segundo = posicao_do_filho(&criador, 1).unwrap();
+        assert_eq!(segundo.x, primeiro.x, "mesma coluna");
+        assert!(segundo.y >= primeiro.y + AGENT_SIZE.1, "abaixo do irmao");
+    }
 
     #[test]
     fn extrai_node_id_do_path() {

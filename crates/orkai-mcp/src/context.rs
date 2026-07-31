@@ -33,6 +33,51 @@ pub enum PeerError {
     NotReadable { kind: String },
     /// Ha aresta e o no aceita escrita, mas o disco recusou.
     WriteFailed { reason: String },
+    /// A operacao chegou ao alvo certo, mas o sistema recusou: binario ausente, processo
+    /// que nao subiu, banco indisponivel. Nao e autorizacao nem tipo de no.
+    Failed { reason: String },
+}
+
+/// Em que ponto do trabalho esta um no vizinho.
+///
+/// Espelha o que a camada de atencao do app deduz do processo. Existe aqui, e nao la,
+/// porque e o vocabulario que o supervisor le pela ferramenta — o app traduz o dele
+/// para este. `Unknown` cobre o que nao tem processo (nota, frame) ou nunca rodou.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeerState {
+    /// Produzindo saida agora: esta no meio de um turno.
+    Running,
+    /// Parado numa pergunta, esperando uma decisao.
+    Waiting,
+    /// Calado ha um tempo, sem pergunta na tela: terminou o turno.
+    Idle,
+    /// Processo encerrado.
+    Exited,
+    /// No sem processo (nota, frame) ou agente que nunca foi iniciado.
+    Unknown,
+}
+
+impl PeerState {
+    /// Rotulo curto usado na resposta da ferramenta.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Running => "executando",
+            Self::Waiting => "aguardando decisao",
+            Self::Idle => "ocioso (turno concluido)",
+            Self::Exited => "encerrado",
+            Self::Unknown => "sem processo",
+        }
+    }
+}
+
+/// Um vizinho com o estado do trabalho dele. E o que o supervisor consulta para saber
+/// quem terminou, quem travou e quem ainda esta produzindo.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PeerStatus {
+    pub peer: Peer,
+    /// Tipo do no (`agent`, `markdown`, `terminal`...), como no `NodeKind::tag`.
+    pub kind: String,
+    pub state: PeerState,
 }
 
 /// Visao que o servidor MCP tem do mundo, do ponto de vista de um agente.
@@ -64,6 +109,27 @@ pub trait McpContext: Send + Sync {
         text: &str,
         append: bool,
     ) -> Result<String, PeerError>;
+
+    /// Estado de cada vizinho do chamador. Mesma ACL do `peers`: fora da vizinhanca
+    /// ninguem existe, entao ninguem e observavel.
+    fn peer_statuses(&self, caller: NodeId) -> Vec<PeerStatus>;
+
+    /// Cria um agente novo ligado ao chamador e ja com o processo rodando.
+    ///
+    /// A aresta com o criador nasce junto de proposito: e ela que autoriza o dialogo
+    /// entre os dois. Um agente criado sem aresta seria um processo que o supervisor
+    /// nao pode nem consultar nem instruir.
+    fn spawn_agent(
+        &self,
+        caller: NodeId,
+        name: &str,
+        role: &str,
+        system_prompt: &str,
+    ) -> Result<Peer, PeerError>;
+
+    /// Encerra o processo de um agente vizinho. O no continua no canvas com o
+    /// transcript: matar o processo e reversivel, apagar a conversa nao.
+    fn stop_agent(&self, caller: NodeId, target: NodeId) -> Result<(), PeerError>;
 
     /// Resolve um id a partir do que o agente digitou: aceita o UUID ou o nome do peer.
     /// So resolve entre os peers do chamador — nao da para mirar quem nao e vizinho.

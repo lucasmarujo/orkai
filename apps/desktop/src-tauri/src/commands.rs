@@ -608,11 +608,27 @@ pub async fn pty_spawn(
     cols: u16,
     rows: u16,
 ) -> Result<()> {
+    let workspace = state.load_active().await?;
+    spawn_pty(&app, &state, &workspace, node_id, cols, rows).await
+}
+
+/// Inicia o processo de um no e liga a sessao ao front.
+///
+/// Recebe o workspace pronto em vez de carregar o ativo: um agente criado por outro
+/// agente (tool `orkai_spawn_agent`) pode viver num workflow que nao esta aberto, e
+/// nesse caso `load_active` nao acharia o no.
+pub async fn spawn_pty(
+    app: &AppHandle,
+    state: &AppState,
+    workspace: &Workspace,
+    node_id: NodeId,
+    cols: u16,
+    rows: u16,
+) -> Result<()> {
     if state.ptys.contains(node_id) {
         return Ok(());
     }
 
-    let workspace = state.load_active().await?;
     let node = workspace.node(node_id)?;
     let Some((comando, args, cwd)) = node.kind.spawn_spec() else {
         return Err(AppError::NotSpawnable(node_id.to_string()));
@@ -655,6 +671,8 @@ pub async fn pty_spawn(
     // So agente entra na camada de atencao: um terminal e do humano, ninguem precisa
     // ser avisado de que ele parou num prompt.
     let attention = eh_agente.then(|| std::sync::Arc::clone(&state.attention));
+    // O callback vive na thread da sessao: leva o proprio handle.
+    let app = app.clone();
     let sessao = state.pty_backend.spawn(
         spec,
         std::sync::Arc::new(move |evento| match evento {
@@ -799,14 +817,8 @@ pub fn command_available(command: String) -> bool {
 /// ponytail: um provider por vez; adiciona o proximo quando for testar com o binario real.
 fn mcp_args(comando: &str, porta: u16, node_id: NodeId) -> Vec<String> {
     let url = crate::mcp_server::agent_url(porta, node_id);
-    // Nome do binario sem caminho nem extensao: "C:/.../claude.exe" -> "claude".
-    let base = std::path::Path::new(comando)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(comando)
-        .to_ascii_lowercase();
 
-    match base.as_str() {
+    match nome_base(comando).as_str() {
         "claude" => {
             let config = serde_json::json!({
                 "mcpServers": { "orkai": { "type": "http", "url": url } }
@@ -820,6 +832,46 @@ fn mcp_args(comando: &str, porta: u16, node_id: NodeId) -> Vec<String> {
     }
 }
 
+/// Nome do binario sem caminho nem extensao: "C:/.../claude.exe" -> "claude".
+fn nome_base(comando: &str) -> String {
+    std::path::Path::new(comando)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(comando)
+        .to_ascii_lowercase()
+}
+
+/// Flag do Claude Code para o prompt de sistema. Espelha `PROVIDERS` no front
+/// (`src/agents/profiles.ts`), que e onde o catalogo de CLIs vive.
+const SYSTEM_PROMPT_FLAG: &str = "--append-system-prompt";
+
+/// Argumentos do agente que outro agente cria (tool `orkai_spawn_agent`).
+///
+/// Herda o CLI do criador — e o unico jeito de garantir que o filho tambem fala MCP —
+/// mas nao a persona dele: o prompt de sistema do pai sai e o do filho entra.
+pub fn args_do_filho(comando: &str, args_do_pai: &[String], system_prompt: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut pular_valor = false;
+    for arg in args_do_pai {
+        if pular_valor {
+            pular_valor = false;
+            continue;
+        }
+        if arg == SYSTEM_PROMPT_FLAG {
+            pular_valor = true;
+            continue;
+        }
+        args.push(arg.clone());
+    }
+
+    // Mesma resolucao do `mcp_args`: so o Claude Code esta cabeado.
+    if nome_base(comando) == "claude" && !system_prompt.trim().is_empty() {
+        args.push(SYSTEM_PROMPT_FLAG.to_string());
+        args.push(system_prompt.to_string());
+    }
+    args
+}
+
 fn agora_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -830,6 +882,37 @@ fn agora_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn args_do_filho_troca_a_persona_do_pai_pela_dele() {
+        let pai = vec![
+            "--model".to_string(),
+            "opus".to_string(),
+            SYSTEM_PROMPT_FLAG.to_string(),
+            "Voce e o supervisor.".to_string(),
+        ];
+        let filho = args_do_filho("claude", &pai, "Voce cuida do backend.");
+
+        assert_eq!(
+            filho,
+            vec![
+                "--model",
+                "opus",
+                SYSTEM_PROMPT_FLAG,
+                "Voce cuida do backend."
+            ],
+            "mantem as flags do CLI, troca so o prompt"
+        );
+    }
+
+    #[test]
+    fn args_do_filho_sem_prompt_e_em_cli_sem_flag() {
+        let pai = vec![SYSTEM_PROMPT_FLAG.to_string(), "persona".to_string()];
+        // Sem prompt novo: o filho fica sem persona, nao com a do pai.
+        assert!(args_do_filho("claude", &pai, "  ").is_empty());
+        // CLI sem flag cabeada: nada de prompt na linha de comando.
+        assert!(args_do_filho("codex", &pai, "Voce cuida do backend.").is_empty());
+    }
 
     #[test]
     fn mcp_args_cabeia_claude_e_ignora_desconhecido() {
